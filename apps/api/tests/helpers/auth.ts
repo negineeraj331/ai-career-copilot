@@ -1,3 +1,4 @@
+import type { Server } from 'node:http';
 import request from 'supertest';
 import type { Express } from 'express';
 import { prisma } from '../../src/core/db/prisma.js';
@@ -19,9 +20,34 @@ export interface Client {
   csrf: string;
 }
 
+/**
+ * One listening server per app, reused by every client.
+ *
+ * Handing `request.agent()` an Express app rather than a server makes supertest
+ * bind a fresh ephemeral port for that agent. The suite creates a client per
+ * signed-in user per test, so that was hundreds of listen/close cycles per run
+ * and thousands of sockets stuck in TIME_WAIT (measured: 1213 on this machine).
+ * The result was a suite that failed roughly one run in ten with `ECONNRESET`
+ * or an unexplained 401 — connection-level noise wearing the costume of an
+ * application bug.
+ *
+ * `unref()` so a stray listener cannot keep the process alive after the run.
+ */
+const servers = new WeakMap<Express, Server>();
+
+function serverFor(app: Express): Server {
+  const existing = servers.get(app);
+  if (existing) return existing;
+
+  const server = app.listen(0);
+  server.unref();
+  servers.set(app, server);
+  return server;
+}
+
 /** An agent holding a cookie jar and a matching CSRF token. */
 export async function makeClient(app: Express): Promise<Client> {
-  const agent = request.agent(app);
+  const agent = request.agent(serverFor(app));
   const res = await agent.get(`${API}/me`);
   const cookies = (res.headers['set-cookie'] as unknown as string[] | undefined) ?? [];
   const csrfCookie = cookies.find((c) => c.startsWith('cc_csrf='));

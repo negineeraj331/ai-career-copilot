@@ -30,21 +30,24 @@ const RESUMES = '/api/v1/resumes';
 let app: Express;
 let client: Client;
 
-const OWNER = 'resume-owner@example.com';
-const STRANGER = 'resume-stranger@example.com';
-const MANAGED = [OWNER, STRANGER];
+/** Fresh addresses per test — see auth-mfa.test.ts for the reasoning. */
+const EMAIL_PREFIX = 'resume-';
+let OWNER = '';
+let STRANGER = '';
 
 beforeAll(() => {
   app = createApp();
 });
 
 beforeEach(async () => {
-  await resetAuthState(MANAGED);
+  OWNER = `${EMAIL_PREFIX}owner-${randomUUID()}@example.com`;
+  STRANGER = `${EMAIL_PREFIX}stranger-${randomUUID()}@example.com`;
+  await resetAuthState([OWNER, STRANGER]);
   client = await makeClient(app);
 });
 
 afterAll(async () => {
-  await resetAuthState(MANAGED);
+  await prisma().user.deleteMany({ where: { email: { startsWith: EMAIL_PREFIX } } });
   await Promise.all([closeDatabase(), closeRedis()]);
 });
 
@@ -85,7 +88,10 @@ describe('create', () => {
     expect(resume.title).toBe('Backend SDE');
     expect(resume.status).toBe('DRAFT');
     expect(resume.currentVersion).toBe(1);
-    expect(resume.atsScore).toBeNull();
+    // Scored on creation as of slice 1.2. An empty starter document should
+    // score badly — that is the engine working, not a defect.
+    expect(resume.atsScore).toBeGreaterThanOrEqual(0);
+    expect(resume.atsScore).toBeLessThan(30);
     // Seeded from the account, so a new user does not start by retyping their
     // own name and address.
     expect(resume.content.contact.email).toBe(OWNER);

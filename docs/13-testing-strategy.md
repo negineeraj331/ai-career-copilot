@@ -197,7 +197,7 @@ input — is a hard gate.
 | `modules/auth`          | 90% lines | **94.7%** | An auth bug is an account takeover       |
 | `core/security`         | 92% lines | **97.7%** | CSRF, rate limiting, request correlation |
 | Branches (API)          | 65%       | **71.8%** | See the note below                       |
-| `packages/ats`          | 95%       | —         | Not built yet (Phase 1)                  |
+| `packages/ats`          | 95% lines | **96.7%** | Pure functions; no excuse for a gap      |
 | Quota and billing logic | 95%       | —         | Not built yet (Phase 1)                  |
 
 **The gates sit below the measured values, deliberately.** A threshold pinned exactly at the

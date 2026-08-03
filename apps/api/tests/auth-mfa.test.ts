@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { generateSync } from 'otplib';
 import type { Express } from 'express';
 import { createApp } from '../src/app.js';
@@ -20,20 +21,30 @@ import {
 let app: Express;
 let client: Client;
 
-const EMAIL = 'mfa-test@example.com';
-const MANAGED = [EMAIL];
+/**
+ * A fresh address per test, not one shared constant.
+ *
+ * With a module-level email every test inherits whatever the previous one left
+ * behind — a user row, a lockout counter keyed on email+IP, a message still
+ * sitting in the shared mailbox — and cleanup has to be perfect for the suite
+ * to be trustworthy. A unique address per test means there is nothing to
+ * inherit, so the ordering between tests stops mattering at all.
+ */
+const EMAIL_PREFIX = 'mfa-';
+let EMAIL = '';
 
 beforeAll(() => {
   app = createApp();
 });
 
 beforeEach(async () => {
-  await resetAuthState(MANAGED);
+  EMAIL = `${EMAIL_PREFIX}${randomUUID()}@example.com`;
+  await resetAuthState([EMAIL]);
   client = await makeClient(app);
 });
 
 afterAll(async () => {
-  await resetAuthState(MANAGED);
+  await prisma().user.deleteMany({ where: { email: { startsWith: EMAIL_PREFIX } } });
   await Promise.all([closeDatabase(), closeRedis()]);
 });
 

@@ -19,13 +19,22 @@ export function hashPassword(plain: string): Promise<string> {
 }
 
 export async function verifyPassword(plain: string, hashed: string): Promise<boolean> {
-  try {
-    return await verify(hashed, plain, ARGON2_OPTIONS);
-  } catch {
-    // A malformed stored hash must read as "wrong password", never as a crash
-    // that leaks which accounts have unusual records.
-    return false;
-  }
+  // A stored value that is not an argon2 hash at all — a legacy record, a
+  // truncated column, a placeholder — must read as "wrong password" rather than
+  // crash, or the error itself tells an attacker which accounts have unusual
+  // records.
+  if (!hashed.startsWith('$argon2')) return false;
+
+  // Everything else is allowed to throw, deliberately.
+  //
+  // This used to be a bare `catch { return false }` around the whole call, and
+  // that swallowed operational failures as well as malformed input: argon2
+  // allocates 19 MiB per verification, and when that allocation fails the user
+  // was told their password was wrong. It presented as an intermittent 401 on a
+  // correct password — one run in nine of the test suite — and it was
+  // undiagnosable precisely because the cause had been converted into a
+  // plausible-looking answer. A 500 here is far better than a lie.
+  return verify(hashed, plain, ARGON2_OPTIONS);
 }
 
 /**

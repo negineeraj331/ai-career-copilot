@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import type { Express } from 'express';
 import { createApp } from '../src/app.js';
 import { closeDatabase, prisma } from '../src/core/db/prisma.js';
@@ -25,20 +26,25 @@ import {
 let app: Express;
 let client: Client;
 
-const EMAIL = 'account-test@example.com';
-const MANAGED = [EMAIL];
+/**
+ * A fresh address per test — see auth-mfa.test.ts for the reasoning. Nothing to
+ * inherit means test ordering cannot affect the result.
+ */
+const EMAIL_PREFIX = 'account-';
+let EMAIL = '';
 
 beforeAll(() => {
   app = createApp();
 });
 
 beforeEach(async () => {
-  await resetAuthState(MANAGED);
+  EMAIL = `${EMAIL_PREFIX}${randomUUID()}@example.com`;
+  await resetAuthState([EMAIL]);
   client = await makeClient(app);
 });
 
 afterAll(async () => {
-  await resetAuthState(MANAGED);
+  await prisma().user.deleteMany({ where: { email: { startsWith: EMAIL_PREFIX } } });
   await Promise.all([closeDatabase(), closeRedis()]);
 });
 

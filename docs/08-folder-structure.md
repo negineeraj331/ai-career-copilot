@@ -272,7 +272,9 @@ packages/ats/src/
 │   ├── formatting.rules.ts
 │   ├── readability.rules.ts
 │   └── completeness.rules.ts
-├── rubric.ts                       # weights + rubric version
+├── rubric.ts                       # weights, rubric version, rule/outcome types
+├── text.ts                         # shared text primitives, so two rules cannot
+│                                   #   disagree about what counts as a bullet
 └── __tests__/
 
 packages/ai/src/

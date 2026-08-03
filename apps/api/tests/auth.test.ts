@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { Express } from 'express';
 import { createApp } from '../src/app.js';
@@ -21,21 +22,27 @@ import {
 let app: Express;
 let client: Client;
 
-const EMAIL = 'flow-test@example.com';
-const OTHER_EMAIL = 'flow-other@example.com';
-const MANAGED = [EMAIL, OTHER_EMAIL];
+/**
+ * A fresh address per test — see auth-mfa.test.ts for the reasoning. Nothing to
+ * inherit means test ordering cannot affect the result.
+ */
+const EMAIL_PREFIX = 'flow-';
+let EMAIL = '';
+let OTHER_EMAIL = '';
 
 beforeAll(() => {
   app = createApp();
 });
 
 beforeEach(async () => {
-  await resetAuthState(MANAGED);
+  EMAIL = `${EMAIL_PREFIX}${randomUUID()}@example.com`;
+  OTHER_EMAIL = `${EMAIL_PREFIX}other-${randomUUID()}@example.com`;
+  await resetAuthState([EMAIL, OTHER_EMAIL]);
   client = await makeClient(app);
 });
 
 afterAll(async () => {
-  await resetAuthState(MANAGED);
+  await prisma().user.deleteMany({ where: { email: { startsWith: EMAIL_PREFIX } } });
   await Promise.all([closeDatabase(), closeRedis()]);
 });
 
@@ -101,9 +108,13 @@ describe('registration', () => {
   });
 
   it('rejects a password containing the user’s own email', async () => {
+    // Derived from the address under test rather than hardcoded: EMAIL is
+    // randomised per test, and a literal here would stop exercising the rule
+    // the moment the fixture changed — while still passing.
+    const localPart = EMAIL.split('@')[0] ?? '';
     const res = await post(client, `${API}/register`, {
       email: EMAIL,
-      password: 'flow-test-is-my-password',
+      password: `${localPart}-is-my-password`,
     }).expect(400);
     expect(res.body.error.details?.[0]?.field).toBe('password');
   });

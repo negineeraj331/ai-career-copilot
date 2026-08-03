@@ -1,7 +1,7 @@
 # Build Tracker — Career Copilot
 
 **Last updated:** 2026-08-04 · Owner: Neeraj Negi
-**Current phase:** Phase 1 — Core loop · slice 1.1 done. Next: slice 1.2 (ATS engine)
+**Current phase:** Phase 1 — Core loop · slices 1.1–1.2 done. Next: slice 1.3 (editor)
 
 This is the live status of the build. The [roadmap](./17-feature-roadmap.md) says what we
 intend to build and in what order; this file says what actually exists right now. Update it in
@@ -18,12 +18,12 @@ people trust it.
 | ------------------------- | ----------- | ------ |
 | Documentation             | 19 / 19     | `DONE` |
 | Phase 0 — Foundation      | 8 / 8       | `DONE` |
-| Phase 1 — Core loop       | 1 / 9       | `WIP`  |
+| Phase 1 — Core loop       | 2 / 9       | `WIP`  |
 | Phase 2 — Retention       | 0 / 7       | `TODO` |
 | Phase 3 — Differentiation | 0 / 7       | `TODO` |
 | Phase 4 — Scale           | 0 / 8       | `TODO` |
 
-**Deployed:** nothing yet. **Tests:** 208 passing. **Coverage:** 91.7% API lines. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
+**Deployed:** nothing yet. **Tests:** 290 passing. **Coverage:** 91.7% API lines, 96.7% `@cc/ats`. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
 
 ---
 
@@ -382,8 +382,49 @@ Still open: a hosting target — open question 5, which slice 0.8 was meant to a
 
 ## Phase 1 — Core loop `WIP`
 
-`1.1` Resume model `DONE` · `1.2` ATS engine · `1.3` Editor · `1.4` Templates · `1.5` Export ·
-`1.6` AI layer · `1.7` JD analysis · `1.8` AI writing · `1.9` Versions
+`1.1` Resume model `DONE` · `1.2` ATS engine `DONE` · `1.3` Editor · `1.4` Templates ·
+`1.5` Export · `1.6` AI layer · `1.7` JD analysis · `1.8` AI writing · `1.9` Versions
+
+### `1.2` ATS engine `DONE`
+
+- [x] `packages/ats` — pure functions, no I/O, no clock, no AI (FR-40)
+- [x] Five rule families, 26 rules, weighted composite (FR-41)
+- [x] Every rule returns id, label, status, weight, earned, explanation, and a fix (FR-42)
+- [x] `POST /ats/score` — scores a stored resume or an unsaved draft
+- [x] `atsScore` written on create, update, and restore; no longer permanently null
+- [x] 63 unit tests in the package, 15 integration tests over HTTP
+
+**Verified:** 96.7% statements / 96.7% lines in `packages/ats`, against the ≥ 95% NFR-40 asks
+for · 207 API tests pass · lint, format, typecheck, build, bundle budget, audit all clean.
+
+**The purity rule was tested, not assumed.** `packages/ats` has had a no-I/O ESLint rule since
+slice 0.1 with no package to guard. Adding an `@prisma/client` import to `engine.ts` now fails
+the lint run with the intended message; removing it goes clean again. A guard nobody has ever
+seen fire is a guard nobody should trust.
+
+**An empty resume scored 35/100 until the output was actually read.** Every test passed. The
+cause was rules passing _vacuously_: with no bullets, "no first-person pronouns" and "no
+clichés" both returned PASS, so an empty document collected full marks for defects it was too
+empty to have. Absence of evidence is not compliance. Those rules now return NOT_APPLICABLE and
+the engine redistributes weight across the components that did apply, which dropped an empty
+document to 12/100 — with a regression test pinning it under 20.
+
+**Two rules were weaker than their own descriptions.** `parse.tabular` required three pipe
+characters, so it missed `Skill | Level | Years` — the three-column skills matrix the rule
+exists to catch. `read.complexity` measured clause _length_, so it missed a chain of short
+clauses, which is exactly what a run-on bullet is. Both were found by tests written from the
+rule's stated intent rather than from its implementation.
+
+**Design notes.** Keyword rules fall back to a role-generic bank when no JD is attached, because
+"you are missing keywords" is not a usable finding when we never supplied any — that is slice
+1.7's job. Partial credit is clamped to a strict interior, so a PARTIAL that awards full or zero
+marks surfaces as a bug rather than silently collapsing into PASS or FAIL. A bare year does not
+count as a quantified result: "Java developer since 2019" is tenure, not impact, and counting it
+would let a resume full of dates score like one full of results.
+
+The stored `atsScore` is only the composite integer; the breakdown is recomputed on demand
+because the engine is pure and sub-millisecond, and caching a derived value that a rubric-version
+bump invalidates would leave stale scores behind with nothing to detect them.
 
 ### `1.1` Resume model `DONE`
 
@@ -440,18 +481,55 @@ its own file's messages instead of calling `clear()` on the shared mailbox. Fixe
 found all 23 call sites, and one of them (`registerVerified(email)`) was passing the module
 default instead of its own argument, which the change surfaced immediately.
 
-Separately, `auth-mfa.test.ts` fails roughly **one run in nine**, and it is **not fixed**. The
-symptom is precise: inside `signedInClient()`, `POST /auth/login` returns 401 immediately after
-that same test's register and verify-email both returned 200. It is not a parallelism race —
-`fileParallelism` is `false`, so files run sequentially. It only appears when `auth-mfa` is
-scheduled first, and Vitest orders files by size, so **adding a diagnostic to the file changes
-its size, changes the order, and makes the flake disappear** — 12 instrumented runs caught
-nothing, then 10 clean runs after reverting. That is why there is no captured response body
-yet.
+Separately, an intermittent 401 was chased across slices 1.1 and 1.2. Three findings, one of
+which corrects the entry that used to be here.
 
-The next step is to stop the class of bug rather than chase this instance: give every test its
-own randomised email instead of a module-level constant, so no test can inherit a row, a
-lockout counter, or a mailbox entry from another. Recorded as owed work, not as done.
+**1. A real bug: `verifyPassword` reported operational failures as "wrong password".** The
+implementation wrapped the entire argon2 call in `catch { return false }`. That is right for a
+stored value that is not a hash and wrong for everything else — argon2 allocates 19 MiB per
+verification, and a failed allocation told the user their password was incorrect. The cause had
+been converted into a plausible answer, which is what made it undiagnosable. Now a non-argon2
+value still reads as a wrong password (an error there would tell an attacker which accounts have
+unusual records), and an argon2 failure is allowed to throw. `tests/password-verify.test.ts`
+pins the boundary, written against the library's actual behaviour after probing it: an
+undecodable hash returns false, an unknown variant throws.
+
+**2. Randomised per-test emails.** Every auth and resume test now generates its own address
+instead of sharing a module constant, so no test can inherit a user row, a lockout counter, or a
+mailbox entry. Good hygiene, and it removed a whole class of ordering dependency — but it did
+**not** fix the 401, which recurred on a brand-new unique address.
+
+**3. The measurements were contaminated, and the earlier entry here was wrong.** It claimed the
+flake was invisible to instrumentation because Vitest orders files by size. The real cause was
+simpler and entirely self-inflicted: a **background soak loop and the running `pnpm dev` server
+were sharing the same Redis and Postgres** as the suite under test. Proof came from the rate
+limiter — its remaining counter, which must decrease monotonically within one sequential loop,
+read `29 29 27 29 29 27 28 29 26`, and Redis held `cc:rl:register` and `cc:rl:login` keys the
+probe never creates. With both stopped, twelve consecutive runs read a clean `29 28 27 26 …`.
+Every "isolated" reproduction attempt had another vitest process deleting the same keys and rows
+mid-test.
+
+The lesson is procedural, not technical: **a soak that runs while you are still editing, against
+shared infrastructure, measures your own interference.** Run it last, run it alone.
+
+**4. The actual cause: connection churn in the test harness, not the application.** With a clean
+baseline — nothing else running, all edits finished — the suite failed **2 of 20 runs**. The two
+failures looked unrelated (a 401 at `/mfa/confirm`, and `read ECONNRESET` in a resume test), and
+that was the clue: `ECONNRESET` is a socket error, not an assertion. `request.agent(app)` given
+an Express _app_ rather than a _server_ makes supertest bind a fresh ephemeral port per agent,
+and this suite builds a client per signed-in user per test — hundreds of listen/close cycles a
+run, leaving **1213 sockets in TIME_WAIT** on the machine. The 401 fits the same cause: a
+request that never cleanly reached the app it was aimed at.
+
+The fix is four lines in `tests/helpers/auth.ts`: one listening server per app, memoised in a
+`WeakMap` and `unref()`ed, reused by every client. No test file changed. It also explains why
+every earlier hypothesis — shared emails, argon2 memory, Vitest file ordering, TOTP drift —
+failed to reproduce: none of them were it, and each was a plausible story fitted to a symptom
+rather than a cause traced to evidence.
+
+Both bugs found along the way were real and are worth keeping regardless. But the flake itself
+was in the harness, and four rounds of theorising cost more than one round of measuring would
+have.
 
 Expanded into checklists when Phase 0 closes. See the [roadmap](./17-feature-roadmap.md#phase-1--the-core-loop-next).
 
