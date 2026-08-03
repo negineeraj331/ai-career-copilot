@@ -45,7 +45,13 @@ RUN pnpm --filter @cc/shared build \
 #
 # CI=true because pnpm refuses to write over a modules directory without a TTY
 # to confirm on, and a docker build has none by definition.
-RUN CI=true pnpm deploy --filter=@cc/api --prod --legacy /prod/api
+#
+# --ignore-scripts because @cc/api has a `postinstall` that runs `prisma
+# generate`, and the Prisma CLI is a devDependency that --prod deliberately
+# leaves out. Without this the deploy dies on a missing binary. The client is
+# already generated above and travels inside dist, so there is nothing for a
+# postinstall to do here anyway.
+RUN CI=true pnpm deploy --filter=@cc/api --prod --legacy --ignore-scripts /prod/api
 
 # ─── runtime ─────────────────────────────────────────────────────────────────
 FROM node:22-alpine AS runtime

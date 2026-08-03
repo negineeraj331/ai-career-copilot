@@ -187,8 +187,15 @@ jobs:
           # The weight is Prisma: @prisma/client@7 pulls a large runtime, and
           # `pnpm deploy --legacy` cannot drop the CLI toolchain that comes with
           # it. Pruning it by hand got to 464 MB and broke startup.
+          # Two different numbers get called "image size" and they differ by ~5x
+          # here, so both are printed. `docker image inspect` reports the
+          # UNPACKED size under the classic image store that GitHub runners use;
+          # under the containerd store (common locally) the same command reports
+          # the COMPRESSED size instead. Measuring locally and gating in CI
+          # therefore compares two different quantities unless you say which.
           BYTES=$(docker image inspect cc-api:${{ github.sha }} --format '{{.Size}}')
           MB=$((BYTES / 1024 / 1024))
+          echo "docker images reports: $(docker images cc-api:${{ github.sha }} --format '{{.Size}}')"
           echo "Image size: ${MB} MB (gate 800 MB, target 300 MB)"
           if [ "$MB" -gt 800 ]; then
             echo "::error::Image is ${MB} MB, over the 800 MB regression gate"
