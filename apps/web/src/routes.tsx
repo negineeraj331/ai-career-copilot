@@ -25,6 +25,12 @@ const MfaPage = lazy(() =>
 const DashboardPage = lazy(() =>
   import('./features/dashboard/DashboardPage.js').then((m) => ({ default: m.DashboardPage })),
 );
+const ResumesPage = lazy(() =>
+  import('./features/resume/pages/ResumesPage.js').then((m) => ({ default: m.ResumesPage })),
+);
+const EditorPage = lazy(() =>
+  import('./features/resume/pages/EditorPage.js').then((m) => ({ default: m.EditorPage })),
+);
 
 const passwordPages = () => import('./features/auth/pages/PasswordPages.js');
 const ForgotPasswordPage = lazy(() =>
@@ -73,6 +79,8 @@ export function AppRoutes(): ReactNode {
 
         <Route element={<RequireAuth />}>
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/resumes" element={<ResumesPage />} />
+          <Route path="/resumes/:id" element={<EditorPage />} />
         </Route>
 
         <Route path="*" element={<LandingPage />} />
