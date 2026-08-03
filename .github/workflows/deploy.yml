@@ -76,9 +76,21 @@ jobs:
         # currently-running version keeps working against the new schema — that
         # is what makes rolling back the application safe without a schema
         # rollback. A failed migration halts here, with nothing deployed.
+        #
+        # Skipped when no DATABASE_URL is configured, mirroring how the deploy
+        # step below handles a missing DEPLOY_HOOK. There is no environment to
+        # migrate yet, and a pipeline that fails red on every push to main
+        # teaches everyone to ignore a red pipeline — which is the failure mode
+        # this whole workflow exists to prevent. It fails loudly the moment a
+        # deploy target is actually wired up.
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: pnpm --filter @cc/api exec prisma migrate deploy
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::DATABASE_URL is not configured — skipping migrations, nothing to migrate yet."
+            exit 0
+          fi
+          pnpm --filter @cc/api exec prisma migrate deploy
 
       - name: Deploy
         env:

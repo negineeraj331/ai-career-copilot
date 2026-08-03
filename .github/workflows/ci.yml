@@ -179,14 +179,19 @@ jobs:
       - name: Check image size
         run: |
           # The gate is 800 MB; the TARGET is 300 MB and is currently unmet —
-          # the image measures ~751 MB. A gate pinned at an aspiration fails on
-          # every run and gets switched off, so this one is set where it can
-          # actually catch a regression while the real target stays recorded in
-          # docs/00-TRD.md and docs/tracker.md as work still to do.
+          # this runner measures ~499 MB for the linux/amd64 image that actually
+          # gets deployed. A gate pinned at an aspiration fails on every run and
+          # gets switched off, so this one is set where it can catch a
+          # regression while the real target stays recorded in docs/00-TRD.md
+          # and docs/tracker.md as work still to do.
           #
-          # The weight is Prisma: @prisma/client@7 pulls a large runtime, and
-          # `pnpm deploy --legacy` cannot drop the CLI toolchain that comes with
-          # it. Pruning it by hand got to 464 MB and broke startup.
+          # The weight is Prisma. @prisma/client@7 declares `prisma` as an
+          # OPTIONAL peer, so `pnpm deploy --prod` keeps the peer-resolved
+          # variant and everything beneath it: the CLI, Prisma Studio, @prisma/dev,
+          # pglite, TypeScript, effect, even react-dom — none of it reachable
+          # from dist/index.js. Deleting those by hand reached 464 MB but also
+          # removed @prisma/client-runtime-utils, which the generated client
+          # loads at startup, so the container stopped booting.
           # Two different numbers get called "image size" and they differ by ~5x
           # here, so both are printed. `docker image inspect` reports the
           # UNPACKED size under the classic image store that GitHub runners use;

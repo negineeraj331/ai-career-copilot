@@ -165,11 +165,17 @@ in the product vision below it is design work only.
 
 Known and recorded, not hidden:
 
-- **The container image is 751 MB against a 300 MB target.** `@prisma/client@7`
-  peer-depends on the CLI, so `--prod` cannot drop Studio, `effect`, or TypeScript.
-  Hand-pruning reaches 464 MB but removes a package the generated client loads at
-  startup, and an image that will not boot is worth nothing. The CI gate sits at 800 MB
-  where it can catch a regression — a gate pinned at an aspiration is one people switch off.
+- **The container image is 499 MB against a 300 MB target.** `@prisma/client@7` declares
+  the CLI as an _optional_ peer, so `pnpm deploy --prod` keeps it and everything under it:
+  Prisma Studio, `@prisma/dev`, an in-browser Postgres, TypeScript, `effect`, even
+  `react-dom` — in a backend image, none of it reachable from `dist/index.js`. Hand-pruning
+  reaches 464 MB but removes a package the generated client loads at startup, and an image
+  that will not boot is worth nothing. The CI gate sits at 800 MB where it can catch a
+  regression — a gate pinned at an aspiration is one people switch off.
+  (Quote image sizes carefully: the same build measures 499 MB unpacked on the amd64 CI
+  runner and 720 MB locally on arm64, and `docker image inspect` reports compressed size
+  under the containerd store and unpacked size under the classic one. An earlier 751 MB
+  figure recorded here was a local arm64 measurement that overstated the deployed artifact.)
 - One OAuth test is flaky and is marked as such with a self-diagnosing assertion.
 - Deferred with reasons in the tracker: HIBP breach-corpus password checks, `citext` for
   case-insensitive email, a BRIN index on `AuditLog.createdAt`.
