@@ -1,0 +1,12 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# pnpm blocks dependency postinstall scripts by default — a good supply-chain
+# default. These three are explicitly allowed because they genuinely need one:
+# Prisma downloads its query engine binaries, esbuild its platform binary.
+# Anything not listed here cannot execute code at install time.
+allowBuilds:
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true
