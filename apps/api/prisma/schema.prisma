@@ -1,0 +1,294 @@
+// Career Copilot — identity and audit domain (slice 0.3).
+// Resume, JD, analysis, and application models land in Phase 1.
+// Reference: docs/05-database-design.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7 removed `url` from the datasource block. The connection string now
+// lives in prisma.config.ts (for the CLI) and reaches the client via a driver
+// adapter. See docs/00-TRD.md ADR notes and prisma.config.ts in this app.
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  CANDIDATE
+  MENTOR
+  RECRUITER
+  ADMIN
+}
+
+enum UserTier {
+  FREE
+  PRO
+  TEAM
+}
+
+enum OAuthProvider {
+  GOOGLE
+  GITHUB
+}
+
+enum TokenStatus {
+  ACTIVE
+  ROTATED
+  REVOKED
+}
+
+enum VerificationTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+  MAGIC_LINK
+  EMAIL_CHANGE
+}
+
+enum AuditOutcome {
+  SUCCESS
+  FAILURE
+}
+
+enum AuditEvent {
+  REGISTER
+  EMAIL_VERIFIED
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  LOGOUT
+  LOGOUT_ALL
+  PASSWORD_CHANGED
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_RESET_COMPLETED
+  MAGIC_LINK_REQUESTED
+  MAGIC_LINK_USED
+  MFA_ENABLED
+  MFA_DISABLED
+  MFA_CHALLENGE_FAILED
+  RECOVERY_CODE_USED
+  OAUTH_LINKED
+  OAUTH_UNLINKED
+  SESSION_REVOKED
+  REFRESH_REUSE_DETECTED
+  ACCOUNT_LOCKED
+  ROLE_CHANGED
+  DATA_EXPORTED
+  ACCOUNT_DELETED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  // Unique + nullable passwordHash is what makes account linking a data-model
+  // property rather than an application workaround: a user who signs up with
+  // Google and later sets a password is one row, not two.
+  email           String    @unique
+  emailVerifiedAt DateTime?
+  passwordHash    String?
+
+  name      String?
+  avatarUrl String?
+
+  role UserRole @default(CANDIDATE)
+  tier UserTier @default(FREE)
+
+  // Denormalised from MfaCredential so the login path can branch without a join.
+  mfaEnabled Boolean @default(false)
+
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+  lastLoginAt      DateTime?
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  oauthAccounts      OAuthAccount[]
+  refreshTokens      RefreshToken[]
+  deviceSessions     DeviceSession[]
+  verificationTokens VerificationToken[]
+  mfaCredential      MfaCredential?
+
+  @@index([role, deletedAt])
+  @@index([deletedAt])
+}
+
+model OAuthAccount {
+  id     String @id @default(uuid(7)) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  provider OAuthProvider
+
+  // The provider's stable account ID — never the email, which can change on the
+  // provider side and would silently re-key the link.
+  providerAccountId String
+
+  // Only populated when we need to call the provider's API on the user's behalf.
+  // AES-256-GCM at rest; never plaintext.
+  accessTokenEnc  String?
+  refreshTokenEnc String?
+  expiresAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([provider, providerAccountId])
+  @@unique([userId, provider])
+  @@index([userId])
+}
+
+model DeviceSession {
+  id     String @id @default(uuid(7)) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  userAgent String?
+
+  // Truncated to /24 (IPv4) or /48 (IPv6). Enough to recognise a session,
+  // less PII than a full address. docs/12 §8.
+  ipPrefix    String?
+  deviceLabel String?
+
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  refreshTokens RefreshToken[]
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+}
+
+model RefreshToken {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  sessionId String        @db.Uuid
+  session   DeviceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  // Every token descended from one login shares a familyId. Presenting a token
+  // already marked ROTATED means two parties hold tokens from the same login,
+  // so the whole family is revoked. This is the theft-detection mechanism.
+  familyId String @db.Uuid
+
+  // SHA-256 of the token. The raw value is NEVER stored — a database dump
+  // yields hashes, not usable sessions.
+  tokenHash String @unique
+
+  parentId String? @db.Uuid
+
+  status    TokenStatus @default(ACTIVE)
+  expiresAt DateTime
+  rotatedAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime    @default(now())
+
+  @@index([userId, status])
+  @@index([familyId])
+  @@index([sessionId])
+  @@index([expiresAt])
+}
+
+// One table for every single-use token type. The lifecycle is identical across
+// them (hash, TTL, consume once), so the consume-once logic is written and
+// tested once instead of four times.
+model VerificationToken {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      VerificationTokenType
+  tokenHash String                @unique
+
+  // Type-specific extras, e.g. the requested new address for EMAIL_CHANGE.
+  payload Json?
+
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, type])
+  @@index([expiresAt])
+}
+
+model MfaCredential {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  userId String @unique @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // AES-256-GCM, key from the environment. A plaintext secret column would hand
+  // an attacker with read access the second factor along with the first.
+  secretEnc String
+
+  // argon2id hashes, single use. Shown to the user exactly once at enrolment.
+  recoveryCodeHashes String[]
+
+  confirmedAt DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// Keyed on email+IP rather than the account alone, so an attacker cannot lock a
+// known victim out of their own account by failing logins from elsewhere.
+model LoginAttempt {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  email    String
+  ipPrefix String
+
+  failedCount Int       @default(0)
+  lockedUntil DateTime?
+  lastAttempt DateTime  @default(now())
+
+  @@unique([email, ipPrefix])
+  @@index([lockedUntil])
+}
+
+// Append-only. The application database role holds no UPDATE or DELETE grant on
+// this table — tamper resistance has to be enforced by the database, not by
+// developer discipline. See the grant statement in the initial migration.
+model AuditLog {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  // Deliberately NOT a foreign key.
+  //
+  // A relation here cannot coexist with the append-only trigger: `onDelete:
+  // SetNull` issues an UPDATE against this table, the trigger refuses it, and
+  // account deletion becomes impossible — which would break the 30-day purge
+  // NFR-51 requires. `onDelete: Cascade` would be worse still, quietly erasing
+  // the security trail of the account being removed.
+  //
+  // So this is a plain nullable column: a pseudonymous actor reference that
+  // outlives the User row by design. It is a UUID, not PII, so retaining it
+  // after a purge is exactly the documented behaviour. Nullable because a failed
+  // login may have no known user at all.
+  userId String? @db.Uuid
+
+  event   AuditEvent
+  outcome AuditOutcome @default(SUCCESS)
+
+  ipPrefix     String?
+  userAgent    String?
+  resourceType String?
+  resourceId   String?
+  metadata     Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([event, createdAt])
+}
