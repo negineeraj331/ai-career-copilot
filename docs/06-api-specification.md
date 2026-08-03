@@ -373,6 +373,26 @@ highlight the exact field a recommendation refers to.
 
 Runs the deterministic rule engine. No AI call, no quota consumed, no cost.
 
+**Request — exactly one of `resumeId` or `content`:**
+
+```json
+{ "resumeId": "01J..." }
+{ "content": { "schemaVersion": 1, "contact": {} }, "targetRole": "Backend Engineer" }
+```
+
+The second form scores a document that has not been saved, which is what lets the editor show a
+live score while the user types. Sending both, or neither, is a `400` — the schema enforces it so
+the service can trust its input rather than the controller guessing.
+
+Alongside the fields below, the response carries **`topFixes`**: the rules that cost the most
+points, worst first, ranked by points actually lost rather than by rule weight. A heavy rule that
+passed is not advice.
+
+Rules that had nothing to judge report `NOT_APPLICABLE` and their component's weight is
+redistributed across the components that did apply. An empty resume therefore scores near zero
+rather than collecting marks for defects it is too empty to have, and a resume with no job
+description attached is not punished for keyword coverage nobody asked it about.
+
 ```json
 {
   "success": true,

@@ -19,6 +19,7 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@cc/ats": "workspace:*",
     "@cc/shared": "workspace:*",
     "@node-rs/argon2": "^2.0.2",
     "@prisma/adapter-pg": "^7.9.1",

@@ -6,6 +6,7 @@ import { corsMiddleware, securityHeaders } from './core/security/headers.js';
 import { limiters } from './core/security/rate-limit.js';
 import { requestContext } from './core/security/request-id.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
+import { atsRoutes } from './modules/ats/ats.routes.js';
 import { resumeRoutes } from './modules/resume/resume.routes.js';
 import { healthRoutes } from './modules/health/health.routes.js';
 
@@ -55,6 +56,7 @@ export function createApp(): Express {
 
   app.use('/api/v1/auth', authRoutes());
   app.use('/api/v1/resumes', resumeRoutes());
+  app.use('/api/v1/ats', atsRoutes());
 
   // Further feature routers mount here as slices land.
 

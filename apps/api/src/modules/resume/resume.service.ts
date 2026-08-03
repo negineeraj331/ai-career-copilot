@@ -8,6 +8,7 @@ import {
   type ResumeVersion as ResumeVersionDto,
   type UpdateResumeInput,
 } from '@cc/shared';
+import { scoreResume } from '@cc/ats';
 import type { Prisma, Resume, ResumeVersion } from '../../generated/prisma/index.js';
 import { prisma } from '../../core/db/prisma.js';
 import {
@@ -72,6 +73,18 @@ function parseStoredContent(raw: Prisma.JsonValue): ResumeDocument {
     );
   }
   return parsed.data;
+}
+
+/**
+ * The denormalised list-view score.
+ *
+ * Only the composite integer is stored on Resume; the full breakdown is
+ * recomputed on demand because the engine is pure and cheap (no I/O, no AI, sub
+ * -millisecond), and caching a derived value that the rubric version can
+ * invalidate would mean a rubric change silently leaves stale scores behind.
+ */
+function atsScoreFor(document: ResumeDocument, targetRole?: string | undefined): number {
+  return scoreResume(document, { targetRole }).score;
 }
 
 export interface ListResumesOptions {
@@ -168,7 +181,7 @@ export async function createResume(
 
     return tx.resume.update({
       where: { id: resume.id },
-      data: { currentVersionId: version.id },
+      data: { currentVersionId: version.id, atsScore: atsScoreFor(content, input.targetRole) },
       include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } },
     });
   });
@@ -233,6 +246,7 @@ export async function updateResume(
         });
         content = input.content;
         metadata.currentVersionId = version.id;
+        metadata.atsScore = atsScoreFor(input.content, resume.targetRole ?? undefined);
       }
     }
 
@@ -370,7 +384,10 @@ export async function restoreVersion(
 
     const row = await tx.resume.update({
       where: { id: resumeId },
-      data: { currentVersionId: created.id },
+      data: {
+        currentVersionId: created.id,
+        atsScore: atsScoreFor(parseStoredContent(target.content), undefined),
+      },
       include: { versions: { orderBy: { versionNumber: 'desc' }, take: 1 } },
     });
 
