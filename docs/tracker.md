@@ -522,7 +522,10 @@ run, leaving **1213 sockets in TIME_WAIT** on the machine. The 401 fits the same
 request that never cleanly reached the app it was aimed at.
 
 The fix is four lines in `tests/helpers/auth.ts`: one listening server per app, memoised in a
-`WeakMap` and `unref()`ed, reused by every client. No test file changed. It also explains why
+`WeakMap` and `unref()`ed, reused by every client. No test file changed. **40 consecutive clean
+runs** follow, against 18 of 20 before — at the observed 10% failure rate that outcome has about
+a 1.5% chance of being luck, which is what makes this a fix rather than a hopeful streak. The
+first 20 alone would not have been enough to say so. It also explains why
 every earlier hypothesis — shared emails, argon2 memory, Vitest file ordering, TOTP drift —
 failed to reproduce: none of them were it, and each was a plausible story fitted to a symptom
 rather than a cause traced to evidence.
