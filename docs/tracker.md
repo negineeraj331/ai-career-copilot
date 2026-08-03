@@ -360,9 +360,21 @@ bump — the pipeline catching a breaking change on a PR, which is exactly the j
 **Branch protection is on `main`.** All seven CI checks are required, branches must be up to
 date before merging, history is linear, and force-pushes and deletion are refused. Reviews are
 required but the approving-review count is 0 — a solo developer cannot approve their own PR, and
-a rule that makes merging impossible gets deleted within a week. `enforce_admins` is off, so the
-owner keeps a deliberate emergency path. Both are honest accommodations of a one-person team
-rather than theatre, and both should tighten the moment a second person joins.
+a rule that makes merging impossible gets deleted within a week.
+
+`enforce_admins` is **off**, and that was tested rather than assumed: a direct push to `main`
+printed "Changes must be made through a pull request" and "7 of 7 required status checks are
+expected" — and then updated the ref anyway, because repository admins bypass protection. On a
+solo repository where the only contributor is an admin, the rules currently constrain nobody.
+Turn it on with:
+
+```bash
+gh api -X POST repos/negineeraj331/ai-career-copilot/branches/main/protection/enforce_admins
+```
+
+The trade-off is real in both directions: on, and every change — including a one-line typo fix —
+goes through a PR with a full CI run; off, and the protection is documentation rather than
+enforcement. Worth knowing which one is in force, which is the point of writing it down.
 
 Still open: a hosting target — open question 5, which slice 0.8 was meant to answer and did not.
 
