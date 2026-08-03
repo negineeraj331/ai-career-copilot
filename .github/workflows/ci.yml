@@ -39,10 +39,12 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Build shared contracts
-        # @cc/shared resolves through its built dist, so typecheck fails
-        # without this. It is cheap and keeps the matrix uniform.
-        run: pnpm --filter @cc/shared build
+      - name: Build workspace packages
+        # Every package under packages/* resolves through its built dist, so
+        # typecheck fails without this. Filtered by path rather than by name:
+        # naming @cc/shared alone is what broke when @cc/ats landed, and it
+        # would break again for @cc/ai in slice 1.6.
+        run: pnpm --filter "./packages/*" build
       - name: Run ${{ matrix.check }}
         run: |
           case "${{ matrix.check }}" in
@@ -95,7 +97,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @cc/shared build
+      - run: pnpm --filter "./packages/*" build
 
       - name: Apply migrations
         # `migrate deploy`, never `migrate dev`: deploy is non-interactive and

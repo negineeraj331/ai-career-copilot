@@ -14,6 +14,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/
 COPY packages/shared/package.json ./packages/shared/
+COPY packages/ats/package.json ./packages/ats/
 
 # --ignore-scripts: the Prisma generate step needs the schema, which is not in
 # context yet. It runs explicitly in the build stage below.
@@ -29,7 +30,9 @@ WORKDIR /app
 # with errors that look like a broken dependency rather than missing config.
 COPY tsconfig.base.json ./
 
-COPY packages/shared ./packages/shared
+# Every workspace package, not just the ones the API imports directly today.
+# Naming them one at a time is what broke when @cc/ats landed.
+COPY packages ./packages
 COPY apps/api ./apps/api
 
 # `prisma generate` BEFORE `build`. The generator writes the client into
@@ -37,7 +40,7 @@ COPY apps/api ./apps/api
 # so the client travels with the code that imports it instead of living in
 # node_modules — where an install or a relink silently replaces it with a stub
 # that has no PrismaClient export, and the container dies on startup.
-RUN pnpm --filter @cc/shared build \
+RUN pnpm --filter "./packages/*" build \
  && pnpm --filter @cc/api exec prisma generate \
  && pnpm --filter @cc/api build
 
