@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "types": ["node"],
+    "noEmit": true
+  },
+  // Prisma config and the seed script are real TypeScript that can break the
+  // build, so they are typechecked here rather than left unchecked outside src/.
+  // A separate emit-producing tsconfig.build.json arrives with slice 0.4, when
+  // there is application code to compile.
+  "include": ["src/**/*", "prisma/**/*.ts", "prisma.config.ts"],
+  "exclude": ["dist", "node_modules", "**/*.test.ts"]
+}
