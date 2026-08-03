@@ -42,7 +42,10 @@ async function main(): Promise<void> {
 
     const candidate = await prisma.user.upsert({
       where: { email: 'aditi@example.com' },
-      update: {},
+      // Converge the password on every run. With `update: {}` a row created by
+      // an earlier seed kept its old hash while the script cheerfully printed
+      // the new password — credentials that simply did not work.
+      update: { passwordHash },
       create: {
         email: 'aditi@example.com',
         name: 'Aditi Sharma',
@@ -55,7 +58,7 @@ async function main(): Promise<void> {
 
     const pro = await prisma.user.upsert({
       where: { email: 'rohan@example.com' },
-      update: {},
+      update: { passwordHash },
       create: {
         email: 'rohan@example.com',
         name: 'Rohan Mehta',
@@ -69,7 +72,7 @@ async function main(): Promise<void> {
     // Unverified on purpose: the verification-gate path needs a subject.
     const unverified = await prisma.user.upsert({
       where: { email: 'unverified@example.com' },
-      update: {},
+      update: { passwordHash },
       create: {
         email: 'unverified@example.com',
         name: 'Unverified User',
@@ -81,7 +84,7 @@ async function main(): Promise<void> {
 
     const admin = await prisma.user.upsert({
       where: { email: 'admin@example.com' },
-      update: {},
+      update: { passwordHash },
       create: {
         email: 'admin@example.com',
         name: 'Platform Admin',

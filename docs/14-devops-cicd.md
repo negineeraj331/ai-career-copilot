@@ -142,7 +142,7 @@ cp .env.example .env
 pnpm db:up          # postgres, redis, minio, mailhog
 pnpm db:migrate
 pnpm db:seed
-pnpm dev            # api :54000, web :5173
+pnpm dev            # api :54000, web :55173
 ```
 
 `docker-compose.yml` provides Postgres 16 with `pgvector`, Redis 7, MinIO (S3-compatible),
@@ -151,7 +151,7 @@ and Mailpit (SMTP capture with a web UI). Everything a developer needs runs loca
 single API key.
 
 **Host ports are deliberately non-default:** Postgres `55432`, Redis `56379`, MinIO
-`59000`/`59001`, Mailpit `51025`/`58025`, API `54000`. Developer machines accumulate services,
+`59000`/`59001`, Mailpit `51025`/`58025`, API `54000`, web `55173`. Developer machines accumulate services,
 and a collision here is not a loud failure — it is a connection that silently reaches the
 wrong database or the wrong application. When checking whether a port is free, note that a
 proxying Docker runtime can leave `lsof` and raw TCP probes reporting nothing while a service

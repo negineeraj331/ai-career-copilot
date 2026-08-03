@@ -1,0 +1,116 @@
+@import './tokens.css';
+
+html {
+  background: var(--surface-page);
+  color: var(--ink-primary);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+/**
+ * Focus is restyled, never removed.
+ *
+ * `:focus-visible` rather than `:focus` so pointer users do not see a ring on
+ * every click while keyboard users always do. A global rule means a new
+ * component cannot forget to be focusable-visible.
+ */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/**
+ * Reduced motion, enforced globally rather than per component (NFR-31).
+ *
+ * Per-component opt-in is a rule people forget; one global override cannot be
+ * forgotten. `0.01ms` rather than `0` because some browsers skip
+ * transitionend/animationend entirely at zero, and code that waits for those
+ * events would hang.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Aurora background. Decorative only: never behind body text, and always under
+   a glass layer that restores contrast. */
+.aurora {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(at 20% 20%, var(--color-primary-500) 0, transparent 55%),
+    radial-gradient(at 80% 10%, var(--color-accent-500) 0, transparent 50%),
+    radial-gradient(at 50% 85%, #a855f7 0, transparent 55%);
+  opacity: 0.16;
+  animation: aurora-drift 48s var(--ease-out-soft) infinite alternate;
+}
+
+@keyframes aurora-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(-3%, 2%, 0) scale(1.08);
+  }
+}
+
+.glass {
+  background: var(--surface-glass);
+  backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid var(--border-hairline);
+  box-shadow: var(--shadow-glass);
+}
+
+/* Without a fallback the glass surface is transparent wherever backdrop-filter
+   is unsupported, which puts body text straight onto the aurora. */
+@supports not (backdrop-filter: blur(1px)) {
+  .glass {
+    background: var(--surface-raised);
+  }
+}
+
+/* Screen-reader-only text that becomes visible on focus — used for the
+   skip-to-content link. */
+.sr-only-focusable:not(:focus):not(:focus-within) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Landing hero stagger. CSS rather than a JS animation library — see
+   LandingPage.tsx for the measurement that motivated it. `both` keeps the
+   pre-animation state applied during the delay, so items do not flash in at
+   full opacity before their turn. */
+.animate-rise {
+  animation: rise var(--duration-slow) var(--ease-out-expo) both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

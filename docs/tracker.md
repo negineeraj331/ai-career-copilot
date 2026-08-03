@@ -1,7 +1,7 @@
 # Build Tracker — Career Copilot
 
 **Last updated:** 2026-08-03 · Owner: Neeraj Negi
-**Current phase:** Phase 0 — Foundation · **Current slice:** 0.7 Web shell (next)
+**Current phase:** Phase 0 — Foundation · **Current slice:** 0.8 CI/CD pipeline (next)
 
 This is the live status of the build. The [roadmap](./17-feature-roadmap.md) says what we
 intend to build and in what order; this file says what actually exists right now. Update it in
@@ -17,13 +17,13 @@ people trust it.
 | Phase                     | Slices done | Status |
 | ------------------------- | ----------- | ------ |
 | Documentation             | 19 / 19     | `DONE` |
-| Phase 0 — Foundation      | 5.9 / 8     | `WIP`  |
+| Phase 0 — Foundation      | 6.9 / 8     | `WIP`  |
 | Phase 1 — Core loop       | 0 / 9       | `TODO` |
 | Phase 2 — Retention       | 0 / 7       | `TODO` |
 | Phase 3 — Differentiation | 0 / 7       | `TODO` |
 | Phase 4 — Scale           | 0 / 8       | `TODO` |
 
-**Deployed:** nothing yet. **Tests:** 135 passing (35 unit, 100 integration). **Pipeline:** not yet configured.
+**Deployed:** nothing yet. **Tests:** 146 passing (46 unit, 100 integration). **Pipeline:** not yet configured.
 
 ---
 
@@ -218,14 +218,45 @@ rate-limit bucket — every test hits the same 127.0.0.1 key. Rather than declar
 assertion now reports the actual status and body, so a recurrence names its own cause instead
 of only saying "expected 302". If it returns, that output is the next step.
 
-### 0.7 Web shell `TODO`
+### 0.7 Web shell `DONE`
 
-- [ ] Vite + React + TS + Tailwind + Framer Motion
-- [ ] Design tokens from doc 04 · dark/light + `prefers-reduced-motion`
-- [ ] TanStack Query client · API client with CSRF and refresh-on-401
-- [ ] Auth store · protected routes
-- [ ] Login, register, verify, forgot, reset, MFA screens
-- [ ] UI primitives: Button, Input, Dialog, Toast, Card, Skeleton, EmptyState, ErrorState
+- [x] Vite 8 + React 19 + TypeScript + Tailwind 4 (CSS-first `@theme`)
+- [x] Design tokens from doc 04, including the validated chart palette
+- [x] Light/dark via OS preference and an in-app toggle, no flash of wrong theme
+- [x] `prefers-reduced-motion` enforced globally, not per component
+- [x] TanStack Query client, query-key factory, API client with CSRF and single-flight refresh
+- [x] Session as a query (never duplicated into a store) · protected + inverse route guards
+- [x] Landing, login, register, MFA, verify-email, forgot/reset password, magic link, dashboard
+- [x] UI primitives: Button, Input, Skeleton, EmptyState, ErrorState, FormMessage
+- [x] Route-level code splitting; 11 API-client unit tests
+
+**Verified:** typecheck, lint, and format clean · 11/11 web tests · production build succeeds ·
+dev server serves the app shell with Tailwind tokens compiled · CORS preflight from the web
+origin passes with credentials and rejects a foreign origin · a real login from the browser
+origin returns the user, and `/me`, `/sessions` and `/audit-log` all render live data.
+
+**Bundle:** landing-page initial JS ≈ **123 KB gzip** against a 250 KB budget.
+
+**Framer Motion removed.** It cost **42 KB gzip** on the landing page's critical path — about a
+quarter of the entire JS budget — for three staggered fade-ins that CSS keyframes do for
+nothing. The dependency is gone rather than merely unimported: an unused dependency still costs
+install time and audit surface. It returns in Phase 1 for the score meter and suggestion
+crossfade, where interruptible animation genuinely earns its weight. docs/00 updated.
+
+**Two environment bugs found by running it, not by testing it.**
+
+1. _`pnpm install` silently breaks the API._ Installing anything wipes Prisma's generated
+   client out of the pnpm store, and the next start fails with "does not provide an export
+   named 'PrismaClient'". Adding `postinstall: prisma generate` to `@cc/api` makes that
+   self-healing instead of a recurring puzzle.
+2. _Port 5173 was taken_ by another long-running local project — and bound to IPv6 only, so
+   the IPv4 probe that cleared it reported it free. Web now runs on `55173`, matching the
+   block used by everything else. `strictPort: true` is what surfaced it rather than letting
+   Vite slide to 5174 and silently break the API's CORS allowlist.
+
+**Also fixed:** the seed used `update: {}`, so re-running it never changed an existing user's
+password while still printing the new one — credentials that simply did not work. It now
+converges the password on every run.
 
 ### 0.8 Pipeline `TODO`
 
@@ -269,6 +300,10 @@ stale before they are used.
 | 2026-08-03 | Append-only enforced by trigger, not `REVOKE`                   | A grant does not bind the table owner, and in development the app role _is_ the owner — the guarantee would fail exactly where it is easiest to violate.                                                 |
 | 2026-08-03 | BRIN index on `AuditLog.createdAt` deferred                     | Prisma models indexes and has no BRIN support, so every `migrate diff` regenerates a DROP for it. Composite B-trees cover the queries until scale justifies an out-of-band migration.                    |
 | 2026-08-03 | `citext` for email deferred                                     | Needs Prisma's `postgresqlExtensions` preview feature. Normalisation happens at the Zod boundary instead; documented rather than silently assumed.                                                       |
+| 2026-08-03 | Framer Motion dropped from the web app                          | 42 KB gzip on the landing critical path for three fade-ins CSS does free. Returns in Phase 1 where interruptible animation is actually needed.                                                           |
+| 2026-08-03 | `postinstall: prisma generate` on @cc/api                       | Any `pnpm install` wipes the generated client, so the API fails to boot until someone remembers to regenerate it.                                                                                        |
+| 2026-08-03 | Web on port 55173                                               | 5173 is held by another local project, IPv6-only — an IPv4 probe wrongly reported it free. `strictPort` surfaced it instead of sliding to 5174 and breaking CORS.                                        |
+| 2026-08-03 | Tailwind 4, CSS-first, no JS config                             | `@theme` in tokens.css is the single source of truth the design system asks for; a JS config would mirror the same values in a second place.                                                             |
 | 2026-08-03 | GitHub adapter declares `supportsPkce: false`                   | GitHub OAuth Apps ignore a PKCE challenge silently, so sending one would make the code and docs claim a protection that is not applied.                                                                  |
 | 2026-08-03 | OAuth email matching requires provider verification             | Otherwise registering `victim@example.com` at an identity provider takes over the matching account here.                                                                                                 |
 | 2026-08-03 | Unlink refuses to remove the last login method                  | An account with no password and no provider is unreachable by anyone while still holding the user's data.                                                                                                |

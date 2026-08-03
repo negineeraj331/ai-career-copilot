@@ -1,6 +1,10 @@
 # UI/UX Design System — Career Copilot
 
-**Last updated:** 2026-08-03 · Tokens live in `apps/web/tailwind.config.ts` and `apps/web/src/styles/tokens.css`
+**Last updated:** 2026-08-03 · Tokens live in `apps/web/src/styles/tokens.css`
+
+> Tailwind 4 is CSS-first, so the `@theme` block in that file _is_ the configuration —
+> there is no `tailwind.config.ts`. That is the single source of truth this document asks for:
+> a token cannot drift between a CSS file and a JS config because there is only the CSS file.
 
 ---
 

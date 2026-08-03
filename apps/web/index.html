@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Career Copilot</title>
+    <meta
+      name="description"
+      content="Analyse a job description against your resume, get an explainable ATS score, and close the gap."
+    />
+    <script>
+      // Applied before first paint so a dark-mode user never sees a white flash.
+      // Deliberately inline and tiny: a deferred module would run after paint,
+      // which is the flash this exists to prevent.
+      //
+      // Reads Zustand's persisted envelope ({state:{theme}}) under the same key
+      // the store writes — theme.store.ts. A separate key would drift silently:
+      // the toggle would work but the pre-paint value would not follow it.
+      (function () {
+        try {
+          var raw = localStorage.getItem('cc-theme-store');
+          if (!raw) return;
+          var theme = JSON.parse(raw).state.theme;
+          if (theme === 'dark' || theme === 'light') {
+            document.documentElement.dataset.theme = theme;
+          }
+        } catch (_) {
+          /* private mode or malformed value: fall back to the OS preference */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
