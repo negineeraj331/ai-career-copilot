@@ -90,10 +90,39 @@ codes, argon2id-hashed, displayed exactly once. Disabling MFA requires the curre
 
 ### 2.5 OAuth
 
-Authorisation-code flow with PKCE. `state` is signed, single-use, 10-minute TTL, and bound to
-the session — this is what prevents login CSRF. Redirect URIs are exact-match allowlisted.
-Provider account linking keys on the provider's stable account ID, never the email, because
-emails change and are not a durable identity.
+Authorisation-code flow. `state` is random, single-use, 10-minute TTL, held in Redis and
+consumed with an atomic `GETDEL` — this is what prevents login CSRF. The callback is a GET
+arriving via the provider's redirect, so it carries no header or body we control and the
+double-submit CSRF token cannot apply; `state` is the only protection that flow has, which is
+why single-use is enforced server-side rather than by a cookie its holder could replay.
+
+Redirect URIs are built from configuration, never from a `Host` or `X-Forwarded-Host` header —
+deriving one from the request would let an attacker point the provider's redirect at a host
+they control and collect the code.
+
+**PKCE is per-provider, and declared honestly.** Google supports it (S256 — the verifier stays
+server-side, only the challenge travels). **GitHub OAuth Apps do not.** That adapter sets
+`supportsPkce: false` rather than sending a challenge anyway: GitHub silently ignores unknown
+parameters, so a challenge would be discarded while our code and this document both claimed
+PKCE protection — the worst outcome available. For GitHub, `state` plus a server-side exchange
+using a client secret is the protection, and PKCE's primary threat model (a public client with
+an interceptable redirect) does not apply to a confidential server-side client.
+
+**Account resolution order:** an existing link on `(provider, providerAccountId)` wins, then a
+match on our own email, then account creation. Linking keys on the provider's stable account ID
+and never the email, because emails change and are not a durable identity. Matching an
+_existing_ account by email additionally requires the **provider** to have verified it —
+without that check, anyone able to register `victim@example.com` at an identity provider could
+take over the matching account here. Unverified provider emails are refused for both linking
+and account creation.
+
+**Unlinking refuses to remove the last remaining login method.** An account with no password
+and no other provider still exists and still holds the user's data, but nobody can sign into
+it — a support ticket created by our own API.
+
+**A provider identity is one factor.** If MFA is enabled, the OAuth callback stops at the
+second factor rather than issuing a session; otherwise "sign in with Google" would be a way
+around MFA entirely.
 
 ### 2.6 Lockout
 

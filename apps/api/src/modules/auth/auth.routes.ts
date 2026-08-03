@@ -17,6 +17,7 @@ import { validate } from '../../core/http/validate.js';
 import { limiters } from '../../core/security/rate-limit.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import * as controller from './auth.controller.js';
+import * as oauth from './oauth/oauth.controller.js';
 
 /**
  * Either a TOTP code or a recovery code, never both and never neither. Doing
@@ -116,6 +117,29 @@ export function authRoutes(): Router {
   router.delete('/mfa', authenticate, validate({ body: mfaDisableSchema }), controller.disableMfa);
 
   router.get('/audit-log', authenticate, controller.auditLog);
+
+  // ── OAuth ─────────────────────────────────────────────────────────────────
+  // These are GETs, so the CSRF middleware safe-lists them. The single-use
+  // `state` in Redis is what protects the handshake — the callback arrives via
+  // the provider's redirect and carries neither a header nor a body we control.
+  const providerParam = z.object({ provider: z.enum(['google', 'github']) });
+
+  router.get('/oauth/:provider', validate({ params: providerParam }), oauth.start);
+  router.get('/oauth/:provider/callback', validate({ params: providerParam }), oauth.callback);
+
+  router.get('/oauth', authenticate, oauth.listLinked);
+  router.post(
+    '/oauth/:provider/link',
+    authenticate,
+    validate({ params: providerParam }),
+    oauth.startLink,
+  );
+  router.delete(
+    '/oauth/:provider',
+    authenticate,
+    validate({ params: providerParam }),
+    oauth.unlink,
+  );
 
   return router;
 }

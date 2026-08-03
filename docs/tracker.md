@@ -1,7 +1,7 @@
 # Build Tracker — Career Copilot
 
 **Last updated:** 2026-08-03 · Owner: Neeraj Negi
-**Current phase:** Phase 0 — Foundation · **Current slice:** 0.6 OAuth (next)
+**Current phase:** Phase 0 — Foundation · **Current slice:** 0.7 Web shell (next)
 
 This is the live status of the build. The [roadmap](./17-feature-roadmap.md) says what we
 intend to build and in what order; this file says what actually exists right now. Update it in
@@ -17,13 +17,13 @@ people trust it.
 | Phase                     | Slices done | Status |
 | ------------------------- | ----------- | ------ |
 | Documentation             | 19 / 19     | `DONE` |
-| Phase 0 — Foundation      | 4.9 / 8     | `WIP`  |
+| Phase 0 — Foundation      | 5.9 / 8     | `WIP`  |
 | Phase 1 — Core loop       | 0 / 9       | `TODO` |
 | Phase 2 — Retention       | 0 / 7       | `TODO` |
 | Phase 3 — Differentiation | 0 / 7       | `TODO` |
 | Phase 4 — Scale           | 0 / 8       | `TODO` |
 
-**Deployed:** nothing yet. **Tests:** 113 passing (35 unit, 78 integration). **Pipeline:** not yet configured.
+**Deployed:** nothing yet. **Tests:** 135 passing (35 unit, 100 integration). **Pipeline:** not yet configured.
 
 ---
 
@@ -186,9 +186,37 @@ fragment raised to five characters, with regression tests both ways.
 **Deferred, not claimed:** the breach-corpus (HIBP k-anonymity) half of the password check.
 The static denylist is implemented; docs/12 now says so explicitly.
 
-### 0.6 OAuth `TODO`
+### 0.6 OAuth `DONE`
 
-- [ ] Google (PKCE + signed state) · GitHub · Account linking + unlink guard
+- [x] Provider adapter interface with Google and GitHub implementations
+- [x] Single-use `state` in Redis, consumed with an atomic `GETDEL`
+- [x] PKCE (S256) for Google; declared unsupported for GitHub rather than faked
+- [x] Account resolution: provider account id → verified email → create
+- [x] Linking a provider to an already-signed-in account
+- [x] Unlink guard refusing to remove the last login method
+- [x] MFA still enforced on the OAuth path
+- [x] 22 integration tests against a stub adapter — no test contacts a real provider
+
+**Verified:** typecheck clean · lint clean · 22/22 OAuth tests, 135 across the workspace.
+
+**Two decisions worth recording.**
+
+_GitHub does not support PKCE for OAuth Apps._ The adapter declares `supportsPkce: false`
+instead of sending a challenge that GitHub would silently discard — which would have left the
+code and the docs both claiming a protection that was not there. `state` plus a server-side
+exchange with a client secret is what protects that flow, and PKCE's threat model (a public
+client with an interceptable redirect) does not apply to a confidential server-side client.
+
+_Matching an existing account by email requires the provider to have verified it._ Without
+that gate, anyone able to register `victim@example.com` at an identity provider could claim
+the matching account here. Unverified provider emails are refused for both linking and
+creation, and both paths are tested.
+
+**One flaky test, honestly unresolved.** `refuses a forged state` failed once and then passed
+8 consecutive runs; I could not reproduce it. The likeliest cause is the shared 30/min
+rate-limit bucket — every test hits the same 127.0.0.1 key. Rather than declare it fixed, the
+assertion now reports the actual status and body, so a recurrence names its own cause instead
+of only saying "expected 302". If it returns, that output is the next step.
 
 ### 0.7 Web shell `TODO`
 
@@ -241,6 +269,9 @@ stale before they are used.
 | 2026-08-03 | Append-only enforced by trigger, not `REVOKE`                   | A grant does not bind the table owner, and in development the app role _is_ the owner — the guarantee would fail exactly where it is easiest to violate.                                                 |
 | 2026-08-03 | BRIN index on `AuditLog.createdAt` deferred                     | Prisma models indexes and has no BRIN support, so every `migrate diff` regenerates a DROP for it. Composite B-trees cover the queries until scale justifies an out-of-band migration.                    |
 | 2026-08-03 | `citext` for email deferred                                     | Needs Prisma's `postgresqlExtensions` preview feature. Normalisation happens at the Zod boundary instead; documented rather than silently assumed.                                                       |
+| 2026-08-03 | GitHub adapter declares `supportsPkce: false`                   | GitHub OAuth Apps ignore a PKCE challenge silently, so sending one would make the code and docs claim a protection that is not applied.                                                                  |
+| 2026-08-03 | OAuth email matching requires provider verification             | Otherwise registering `victim@example.com` at an identity provider takes over the matching account here.                                                                                                 |
+| 2026-08-03 | Unlink refuses to remove the last login method                  | An account with no password and no provider is unreachable by anyone while still holding the user's data.                                                                                                |
 | 2026-08-03 | Reuse-detection revocation commits outside the transaction      | Throwing from inside a Prisma interactive transaction rolls it back, so the family revocation was silently undone while the response claimed success.                                                    |
 | 2026-08-03 | Login limiter keyed on IP, not email+IP                         | Keyed per-email it duplicated account lockout, masked its better message, and never caught spraying across accounts — the attack a limiter exists to stop.                                               |
 | 2026-08-03 | Cookie helpers live outside the service layer                   | `tokens.service.ts` importing express violated the layer rule the ESLint config enforces; writing a cookie is an HTTP concern.                                                                           |

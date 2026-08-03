@@ -126,31 +126,33 @@ than performing the work twice. Keys are retained 24 hours.
 
 ## 2. Authentication endpoints
 
-| Method | Path                             | Auth           | Description                       |
-| ------ | -------------------------------- | -------------- | --------------------------------- |
-| POST   | `/auth/register`                 | —              | Create account, send verification |
-| POST   | `/auth/login`                    | —              | Password login                    |
-| POST   | `/auth/mfa/verify`               | mfaToken       | Complete login with TOTP          |
-| POST   | `/auth/refresh`                  | refresh cookie | Rotate tokens                     |
-| POST   | `/auth/logout`                   | ✓              | Revoke current session            |
-| POST   | `/auth/logout-all`               | ✓              | Revoke every session              |
-| POST   | `/auth/verify-email`             | —              | Consume verification token        |
-| POST   | `/auth/resend-verification`      | —              | Re-send verification              |
-| POST   | `/auth/forgot-password`          | —              | Request reset link                |
-| POST   | `/auth/reset-password`           | —              | Consume reset token               |
-| POST   | `/auth/magic-link`               | —              | Request magic link                |
-| POST   | `/auth/magic-link/verify`        | —              | Consume magic link                |
-| GET    | `/auth/oauth/:provider`          | —              | Begin OAuth (302)                 |
-| GET    | `/auth/oauth/:provider/callback` | —              | OAuth callback (302)              |
-| DELETE | `/auth/oauth/:provider`          | ✓              | Unlink provider                   |
-| GET    | `/auth/me`                       | ✓              | Current actor                     |
-| GET    | `/auth/sessions`                 | ✓              | List device sessions              |
-| DELETE | `/auth/sessions/:id`             | ✓              | Revoke one session                |
-| POST   | `/auth/mfa/setup`                | ✓              | Begin TOTP enrolment              |
-| POST   | `/auth/mfa/confirm`              | ✓              | Activate TOTP                     |
-| DELETE | `/auth/mfa`                      | ✓ + password   | Disable TOTP                      |
-| POST   | `/auth/mfa/recovery-codes`       | ✓ + password   | Regenerate recovery codes         |
-| GET    | `/auth/audit-log`                | ✓              | Own security events               |
+| Method | Path                             | Auth           | Description                           |
+| ------ | -------------------------------- | -------------- | ------------------------------------- |
+| POST   | `/auth/register`                 | —              | Create account, send verification     |
+| POST   | `/auth/login`                    | —              | Password login                        |
+| POST   | `/auth/mfa/verify`               | mfaToken       | Complete login with TOTP              |
+| POST   | `/auth/refresh`                  | refresh cookie | Rotate tokens                         |
+| POST   | `/auth/logout`                   | ✓              | Revoke current session                |
+| POST   | `/auth/logout-all`               | ✓              | Revoke every session                  |
+| POST   | `/auth/verify-email`             | —              | Consume verification token            |
+| POST   | `/auth/resend-verification`      | —              | Re-send verification                  |
+| POST   | `/auth/forgot-password`          | —              | Request reset link                    |
+| POST   | `/auth/reset-password`           | —              | Consume reset token                   |
+| POST   | `/auth/magic-link`               | —              | Request magic link                    |
+| POST   | `/auth/magic-link/verify`        | —              | Consume magic link                    |
+| GET    | `/auth/oauth/:provider`          | —              | Begin OAuth (302)                     |
+| GET    | `/auth/oauth/:provider/callback` | —              | OAuth callback (302)                  |
+| DELETE | `/auth/oauth/:provider`          | ✓              | Unlink (refused if last login method) |
+| GET    | `/auth/oauth`                    | ✓              | List linked providers                 |
+| POST   | `/auth/oauth/:provider/link`     | ✓              | Link a provider to this account       |
+| GET    | `/auth/me`                       | ✓              | Current actor                         |
+| GET    | `/auth/sessions`                 | ✓              | List device sessions                  |
+| DELETE | `/auth/sessions/:id`             | ✓              | Revoke one session                    |
+| POST   | `/auth/mfa/setup`                | ✓              | Begin TOTP enrolment                  |
+| POST   | `/auth/mfa/confirm`              | ✓              | Activate TOTP                         |
+| DELETE | `/auth/mfa`                      | ✓ + password   | Disable TOTP                          |
+| POST   | `/auth/mfa/recovery-codes`       | ✓ + password   | Regenerate recovery codes             |
+| GET    | `/auth/audit-log`                | ✓              | Own security events                   |
 
 ### `POST /auth/register`
 
