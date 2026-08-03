@@ -357,8 +357,14 @@ it already handled a missing `DEPLOY_HOOK`.
 Dependabot opened 10 PRs within minutes, and CI **failed** the `node:22-alpine` → `26-alpine`
 bump — the pipeline catching a breaking change on a PR, which is exactly the job.
 
-Still open: branch protection on `main` (now possible, since a remote finally exists), and a
-hosting target — open question 5, which slice 0.8 was meant to answer and did not.
+**Branch protection is on `main`.** All seven CI checks are required, branches must be up to
+date before merging, history is linear, and force-pushes and deletion are refused. Reviews are
+required but the approving-review count is 0 — a solo developer cannot approve their own PR, and
+a rule that makes merging impossible gets deleted within a week. `enforce_admins` is off, so the
+owner keeps a deliberate emergency path. Both are honest accommodations of a one-person team
+rather than theatre, and both should tighten the moment a second person joins.
+
+Still open: a hosting target — open question 5, which slice 0.8 was meant to answer and did not.
 
 ---
 
