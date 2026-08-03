@@ -39,9 +39,9 @@ afterAll(async () => {
 
 async function signedInClient(): Promise<Client> {
   await post(client, `${API}/register`, { email: EMAIL, password: STRONG_PASSWORD }).expect(201);
-  await post(client, `${API}/verify-email`, { token: tokenFromEmail('verify your email') }).expect(
-    200,
-  );
+  await post(client, `${API}/verify-email`, {
+    token: tokenFromEmail('verify your email', EMAIL),
+  }).expect(200);
   await post(client, `${API}/login`, { email: EMAIL, password: STRONG_PASSWORD }).expect(200);
   return client;
 }
@@ -252,7 +252,7 @@ describe('recovery codes', () => {
       where: { user: { email: EMAIL } },
     });
     expect(credential?.recoveryCodeHashes).toHaveLength(9);
-    expect(emailWasSent('recovery code was used')).toBe(true);
+    expect(emailWasSent('recovery code was used', EMAIL)).toBe(true);
   });
 
   it('refuses to reuse a spent recovery code', async () => {
@@ -323,7 +323,7 @@ describe('disabling MFA', () => {
     const user = await prisma().user.findUnique({ where: { email: EMAIL } });
     expect(user?.mfaEnabled).toBe(false);
     expect(await prisma().mfaCredential.count({ where: { userId: user?.id } })).toBe(0);
-    expect(emailWasSent('multi-factor authentication was turned off')).toBe(true);
+    expect(emailWasSent('multi-factor authentication was turned off', EMAIL)).toBe(true);
   });
 });
 
@@ -335,7 +335,7 @@ describe('magic link with MFA enabled', () => {
 
     const fresh = await makeClient(app);
     await post(fresh, `${API}/magic-link`, { email: EMAIL }).expect(200);
-    const token = tokenFromEmail('sign-in link');
+    const token = tokenFromEmail('sign-in link', EMAIL);
 
     const res = await post(fresh, `${API}/magic-link/verify`, { token }).expect(200);
     // Otherwise emailing yourself a link would be a way around MFA entirely.

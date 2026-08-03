@@ -1,7 +1,7 @@
 # Build Tracker — Career Copilot
 
-**Last updated:** 2026-08-03 · Owner: Neeraj Negi
-**Current phase:** Phase 0 — Foundation · **Current phase complete.** Next: Phase 1, slice 1.1 (resume model)
+**Last updated:** 2026-08-04 · Owner: Neeraj Negi
+**Current phase:** Phase 1 — Core loop · slice 1.1 done. Next: slice 1.2 (ATS engine)
 
 This is the live status of the build. The [roadmap](./17-feature-roadmap.md) says what we
 intend to build and in what order; this file says what actually exists right now. Update it in
@@ -18,12 +18,12 @@ people trust it.
 | ------------------------- | ----------- | ------ |
 | Documentation             | 19 / 19     | `DONE` |
 | Phase 0 — Foundation      | 8 / 8       | `DONE` |
-| Phase 1 — Core loop       | 0 / 9       | `TODO` |
+| Phase 1 — Core loop       | 1 / 9       | `WIP`  |
 | Phase 2 — Retention       | 0 / 7       | `TODO` |
 | Phase 3 — Differentiation | 0 / 7       | `TODO` |
 | Phase 4 — Scale           | 0 / 8       | `TODO` |
 
-**Deployed:** nothing yet. **Tests:** 173 passing (73 unit, 100 integration). **Coverage:** 91.0% API lines. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
+**Deployed:** nothing yet. **Tests:** 208 passing. **Coverage:** 91.7% API lines. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
 
 ---
 
@@ -380,10 +380,78 @@ Still open: a hosting target — open question 5, which slice 0.8 was meant to a
 
 ---
 
-## Phase 1 — Core loop `TODO`
+## Phase 1 — Core loop `WIP`
 
-`1.1` Resume model · `1.2` ATS engine · `1.3` Editor · `1.4` Templates · `1.5` Export ·
+`1.1` Resume model `DONE` · `1.2` ATS engine · `1.3` Editor · `1.4` Templates · `1.5` Export ·
 `1.6` AI layer · `1.7` JD analysis · `1.8` AI writing · `1.9` Versions
+
+### `1.1` Resume model `DONE`
+
+- [x] `Resume` and `ResumeVersion` models, migration `20260803202631_add_resume_domain`
+- [x] Full CRUD: list (cursor-paginated), create, read, update, soft delete, duplicate
+- [x] Immutable version snapshots — nothing in the repository layer updates a version row
+- [x] Content-hash coalescing so an unchanged save does not grow history
+- [x] Optimistic concurrency via `expectedVersion`, 409 + `X-Current-Version`
+- [x] Version history, single-version read, and append-only restore
+- [x] 35 new tests (11 unit on the hash, 24 integration against real Postgres)
+
+**Verified:** typecheck, lint, format clean · 188 API tests pass · API line coverage 91.7% ·
+every endpoint exercised over real HTTP against the running server, including the 409 header.
+
+**Restore appends rather than rolls back.** Moving `currentVersionId` backwards would orphan
+everything written after the restored point — which is precisely the work a user is most afraid
+of losing at the moment they press restore. Restoring version 2 of 3 therefore writes version 4
+holding version 2's content, and version 3 stays in the timeline. There is a test asserting
+version 3 survives.
+
+**The content hash needed a canonical serialisation, not `JSON.stringify`.** Stringify follows
+insertion order, so a document rebuilt from form state hashes differently from the identical
+document read back out of jsonb, and every autosave would append a version despite nothing
+changing. Keys are sorted at every depth; array order is left alone, because moving a bullet is
+a real edit. Both directions are tested.
+
+**Ownership is filtered in the query, never checked after the read.** Every lookup carries
+`userId` in its `WHERE` clause, and a cross-user request gets 404 rather than 403 — a 403
+confirms the id exists, which is itself a disclosure. A version id belonging to another resume
+is refused the same way.
+
+**The tests were mutation-checked rather than trusted for passing.** All 35 passed on the first
+run, which is not evidence of anything on its own. Deleting the `userId` filter and disabling
+hash coalescing each made the relevant tests fail, so they are testing behaviour rather than
+restating the implementation.
+
+**`X-Current-Version` was a contract gap, not a design choice.** docs/06 promised the 409 would
+carry the server's current version, but the error envelope's `details` is `{field, message}[]`
+and holds strings only — the number was reachable only by parsing prose. It now rides on a typed
+`VersionConflictError` and reaches the client as a header, matching how `RateLimitedError`
+already surfaces `Retry-After`. docs/06 records the header.
+
+**Deferred to their own slices, deliberately:** import (2.1), export (1.5), diff and compare
+(1.9), share links (2.5). Per-version ATS scores are `null` until the scoring engine lands in
+1.2; the field exists in the contract so the shape does not change under the client later.
+
+**A real bug found in the test helpers, and one flake still open.**
+
+`tokenFromEmail(subject)` matched on subject alone against a single shared in-memory mailbox.
+Three test files send a message whose subject is "verify your email", to three different
+addresses, so the helper returned whichever landed last — one file could consume another
+file's token. It now requires a recipient and matches on both, and `resetAuthState` prunes only
+its own file's messages instead of calling `clear()` on the shared mailbox. Fixed; the compiler
+found all 23 call sites, and one of them (`registerVerified(email)`) was passing the module
+default instead of its own argument, which the change surfaced immediately.
+
+Separately, `auth-mfa.test.ts` fails roughly **one run in nine**, and it is **not fixed**. The
+symptom is precise: inside `signedInClient()`, `POST /auth/login` returns 401 immediately after
+that same test's register and verify-email both returned 200. It is not a parallelism race —
+`fileParallelism` is `false`, so files run sequentially. It only appears when `auth-mfa` is
+scheduled first, and Vitest orders files by size, so **adding a diagnostic to the file changes
+its size, changes the order, and makes the flake disappear** — 12 instrumented runs caught
+nothing, then 10 clean runs after reverting. That is why there is no captured response body
+yet.
+
+The next step is to stop the class of bug rather than chase this instance: give every test its
+own randomised email instead of a module-level constant, so no test can inherit a row, a
+lockout counter, or a mailbox entry from another. Recorded as owed work, not as done.
 
 Expanded into checklists when Phase 0 closes. See the [roadmap](./17-feature-roadmap.md#phase-1--the-core-loop-next).
 

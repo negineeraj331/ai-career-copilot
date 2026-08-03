@@ -267,6 +267,32 @@ sent, and the response is `401`.
 `expectedVersion` implements optimistic concurrency. A mismatch returns `409 CONFLICT` with
 the server's current version, so two open tabs cannot silently overwrite each other.
 
+The version arrives in an **`X-Current-Version`** response header, not in the body. The error
+envelope's `details` is `{field, message}[]` and carries strings only, so a client would
+otherwise have to parse the number out of an English sentence to offer "reload and reapply".
+The header follows the same pattern `Retry-After` already uses for `429`. The body still
+explains the conflict in prose for anything that surfaces it to a human:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "CONFLICT",
+    "message": "This resume changed somewhere else. Reload to get the latest version.",
+    "details": [{ "field": "expectedVersion", "message": "Sent 1, but the current version is 2." }]
+  }
+}
+```
+
+Omitting `expectedVersion` skips the check — correct for the first save from a freshly loaded
+editor, and the reason it is optional rather than required.
+
+**Saves that change nothing do not create a version.** The server hashes a canonical
+serialisation of the document (keys sorted at every depth, array order preserved) and coalesces
+onto the current version when the hash matches. Autosave can therefore fire on a timer without
+turning history into a hundred identical entries. Array order is deliberately significant:
+moving a bullet is a real edit.
+
 ### `POST /resumes/:id/export`
 
 ```json

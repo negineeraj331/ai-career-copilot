@@ -126,6 +126,8 @@ model User {
   deviceSessions     DeviceSession[]
   verificationTokens VerificationToken[]
   mfaCredential      MfaCredential?
+  resumes            Resume[]
+  resumeVersions     ResumeVersion[]
 
   @@index([role, deletedAt])
   @@index([deletedAt])
@@ -302,4 +304,90 @@ model AuditLog {
 
   @@index([userId, createdAt])
   @@index([event, createdAt])
+}
+
+// ─── Resume domain ────────────────────────────────────────────────────────────
+
+enum ResumeStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+  // Set while an import is waiting for the user to confirm extracted data.
+  // Reserved by slice 2.1; no code path produces it yet.
+  AWAITING_CONFIRMATION
+}
+
+model Resume {
+  id     String @id @default(uuid(7)) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title      String
+  templateId String  @default("minimal-ats")
+  targetRole String?
+
+  // The live snapshot. Nullable only for the instant between INSERT and the
+  // first version row inside the creating transaction — a resume is never
+  // observable without one.
+  //
+  // No `@relation` back-reference: ResumeVersion already points at Resume, and
+  // a second relation in the opposite direction makes the pair mutually
+  // required at insert time, which no ordering of two INSERTs can satisfy.
+  currentVersionId String? @db.Uuid
+
+  // Denormalised from the latest analysis so the list view renders without
+  // joining analyses. Recomputed by the scoring path in slice 1.2; null until
+  // a resume has been scored at all.
+  atsScore Int?
+
+  status ResumeStatus @default(DRAFT)
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  versions ResumeVersion[]
+
+  // The exact shape of the list query: this user's undeleted resumes, newest
+  // touched first. A composite in this order lets Postgres satisfy the filter
+  // and the sort from one index without a sort step.
+  @@index([userId, deletedAt, updatedAt(sort: Desc)])
+}
+
+// Immutable. There is no update path in the repository layer, and restoring an
+// old version appends a new row rather than rewriting history — the same
+// reasoning as AuditLog, for a different reason: here it is what makes version
+// history trustworthy rather than what makes an audit trail admissible.
+model ResumeVersion {
+  id       String @id @default(uuid(7)) @db.Uuid
+  resumeId String @db.Uuid
+  resume   Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  versionNumber Int
+
+  // The full resume document, conforming to resumeDocumentSchema at
+  // `schemaVersion`. Stored whole rather than as a delta: reading a version is
+  // the common operation and must not require replaying a chain.
+  content Json
+
+  // SHA-256 over the canonical serialisation. Lets a save that changed nothing
+  // coalesce onto the existing version instead of growing history by one row
+  // per keystroke — autosave in slice 1.3 depends on this.
+  contentHash String
+
+  schemaVersion Int @default(1)
+
+  changeSummary String?
+
+  // Who wrote it. Nullable and SetNull rather than Cascade: deleting a
+  // collaborator must not delete the versions they contributed to, which would
+  // silently rewrite another user's history.
+  createdById String? @db.Uuid
+  createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@unique([resumeId, versionNumber])
+  @@index([resumeId, createdAt(sort: Desc)])
+  @@index([contentHash])
 }

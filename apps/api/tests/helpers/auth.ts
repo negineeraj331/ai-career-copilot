@@ -47,28 +47,48 @@ export function testMailer(): InMemoryMailer {
   return mailer() as InMemoryMailer;
 }
 
-/** Pull the token out of the most recent email matching a subject fragment. */
-export function tokenFromEmail(subjectFragment: string): string {
+/**
+ * Pull the token out of the most recent email sent TO `recipient` matching a
+ * subject fragment.
+ *
+ * The recipient is required, and that is the whole point. Vitest runs test
+ * files in parallel against one in-memory mailer, and several files send a
+ * message whose subject is "verify your email" — to different addresses. A
+ * lookup by subject alone returns whichever landed last, so one file could
+ * consume another file's token and fail with a misleading 400. Scoping by
+ * recipient makes each file's mailbox effectively its own.
+ */
+export function tokenFromEmail(subjectFragment: string, recipient: string): string {
   const message = [...testMailer().sent]
     .reverse()
-    .find((m) => m.subject.toLowerCase().includes(subjectFragment.toLowerCase()));
-  if (!message) throw new Error(`No email matching "${subjectFragment}". Sent: ${describeSent()}`);
+    .find(
+      (m) =>
+        m.to.toLowerCase() === recipient.toLowerCase() &&
+        m.subject.toLowerCase().includes(subjectFragment.toLowerCase()),
+    );
+  if (!message) {
+    throw new Error(
+      `No email to ${recipient} matching "${subjectFragment}". Sent: ${describeSent()}`,
+    );
+  }
 
   const match = /token=([A-Za-z0-9_-]+)/.exec(message.text);
   if (!match?.[1]) throw new Error(`No token in email "${message.subject}"`);
   return match[1];
 }
 
-export function emailWasSent(subjectFragment: string): boolean {
-  return testMailer().sent.some((m) =>
-    m.subject.toLowerCase().includes(subjectFragment.toLowerCase()),
+export function emailWasSent(subjectFragment: string, recipient: string): boolean {
+  return testMailer().sent.some(
+    (m) =>
+      m.to.toLowerCase() === recipient.toLowerCase() &&
+      m.subject.toLowerCase().includes(subjectFragment.toLowerCase()),
   );
 }
 
 function describeSent(): string {
   return (
     testMailer()
-      .sent.map((m) => m.subject)
+      .sent.map((m) => `${m.to}: ${m.subject}`)
       .join(' | ') || '(none)'
   );
 }
@@ -79,7 +99,15 @@ function describeSent(): string {
  * passes or fails depending on execution order, which is worse than failing.
  */
 export async function resetAuthState(emails: string[]): Promise<void> {
-  testMailer().clear();
+  // Prune only this file's own messages. `clear()` empties the mailbox for
+  // every file at once, and with parallel test files that wipes messages
+  // another file is between sending and reading — an intermittent "No email
+  // matching …" that looks like a bug in the code under test.
+  const sent = testMailer().sent;
+  const targets = new Set(emails.map((e) => e.toLowerCase()));
+  for (let i = sent.length - 1; i >= 0; i--) {
+    if (targets.has((sent[i]?.to ?? '').toLowerCase())) sent.splice(i, 1);
+  }
 
   const keys = await redis().keys('cc:rl:*');
   if (keys.length > 0) await redis().del(...keys);
