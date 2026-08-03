@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 
 /** Shared shell for every auth screen: aurora background, glass card, and a
  *  consistent place for the heading and footer link. */

@@ -1,0 +1,147 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main, develop]
+
+# Never cancel a deploy in progress — a half-applied migration or a partially
+# rolled deployment is far worse than a queued run.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write # push the image to GHCR
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ${{ github.repository }}/api
+
+jobs:
+  image:
+    name: Build and push image
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - id: meta
+        name: Derive image tag
+        # Tagged by commit SHA, never `latest`. Rollback means redeploying a
+        # specific known-good image, and `latest` makes that impossible —
+        # you cannot point at "the one from before" if every build overwrote it.
+        run: echo "tag=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    runs-on: ubuntu-latest
+    needs: [image]
+    # The environment gate is what makes production deploys reviewable: a
+    # required reviewer on the `production` environment turns a merge into a
+    # deliberate release rather than an automatic one.
+    environment:
+      name: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+      url: ${{ vars.APP_URL }}
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Run migrations
+        # Before the new code is live, and forward-only. Breaking changes ship
+        # as expand → backfill → contract across separate releases, so the
+        # currently-running version keeps working against the new schema — that
+        # is what makes rolling back the application safe without a schema
+        # rollback. A failed migration halts here, with nothing deployed.
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: pnpm --filter @cc/api exec prisma migrate deploy
+
+      - name: Deploy
+        env:
+          IMAGE_REF: ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ needs.image.outputs.tag }}
+          DEPLOY_HOOK: ${{ secrets.DEPLOY_HOOK }}
+        run: |
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo "::warning::DEPLOY_HOOK is not configured — no hosting target is wired up yet."
+            echo "Image ready to deploy: $IMAGE_REF"
+            exit 0
+          fi
+          curl --fail --silent --show-error -X POST "$DEPLOY_HOOK" \
+            -H 'Content-Type: application/json' \
+            -d "{\"image\":\"$IMAGE_REF\"}"
+
+      - name: Health check
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "::warning::APP_URL is not set — skipping the post-deploy health check."
+            exit 0
+          fi
+          # Poll readiness rather than sleeping a fixed amount: a fixed sleep is
+          # either too short (false failure) or wastes time on every deploy.
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$APP_URL/health/ready" || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "Healthy after ${i} attempt(s)."
+              exit 0
+            fi
+            echo "attempt ${i}: ${code}"
+            sleep 5
+          done
+          echo "::error::Never became healthy within 150s"
+          exit 1
+
+      - name: Roll back on failure
+        if: failure()
+        env:
+          DEPLOY_HOOK: ${{ secrets.DEPLOY_HOOK }}
+        run: |
+          # Redeploy the previous image tag. Deliberately does NOT revert the
+          # migration: an automatic down-migration against a live database is
+          # how an incident becomes data loss. Expand/contract is what makes
+          # the older application version safe against the newer schema.
+          echo "::error::Deploy failed — rolling the application back."
+          if [ -n "$DEPLOY_HOOK" ] && [ -n "${{ vars.PREVIOUS_IMAGE }}" ]; then
+            curl --fail --silent --show-error -X POST "$DEPLOY_HOOK" \
+              -H 'Content-Type: application/json' \
+              -d "{\"image\":\"${{ vars.PREVIOUS_IMAGE }}\"}"
+          else
+            echo "::warning::No rollback target configured — manual intervention required."
+          fi
+
+      - name: Notify
+        if: always()
+        env:
+          WEBHOOK: ${{ secrets.NOTIFY_WEBHOOK }}
+        run: |
+          [ -z "$WEBHOOK" ] && exit 0
+          STATUS='${{ job.status }}'
+          curl --silent --show-error -X POST "$WEBHOOK" \
+            -H 'Content-Type: application/json' \
+            -d "{\"content\":\"Deploy **${STATUS}** — \`${{ github.ref_name }}\` @ \`${GITHUB_SHA::8}\` by ${{ github.actor }}\"}" \
+            || echo "::warning::Notification failed (not failing the deploy over it)"

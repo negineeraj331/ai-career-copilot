@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { config as loadEnv } from 'dotenv';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../src/generated/prisma/index.js';
 import { hash } from '@node-rs/argon2';
 
 loadEnv({ path: ['../../.env', '.env'], quiet: true });

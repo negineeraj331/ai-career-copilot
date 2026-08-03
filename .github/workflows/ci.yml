@@ -1,0 +1,199 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# A new push to the same branch cancels the previous run. Without this, a
+# rapid series of pushes queues several full pipelines and the useful one —
+# the latest — waits behind runs nobody is looking at any more.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege by default; jobs that need more ask for it explicitly.
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  # ── Static checks ──────────────────────────────────────────────────────────
+  # Fast, dependency-free, and run in parallel: a lint error should not wait
+  # for Postgres to boot before it tells you.
+  static:
+    name: ${{ matrix.check }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # report every failure in one run, not one per push
+      matrix:
+        check: [lint, format, typecheck]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build shared contracts
+        # @cc/shared resolves through its built dist, so typecheck fails
+        # without this. It is cheap and keeps the matrix uniform.
+        run: pnpm --filter @cc/shared build
+      - name: Run ${{ matrix.check }}
+        run: |
+          case "${{ matrix.check }}" in
+            lint)      pnpm lint ;;
+            format)    pnpm format:check ;;
+            typecheck) pnpm typecheck ;;
+          esac
+
+  # ── Tests ──────────────────────────────────────────────────────────────────
+  test:
+    name: Tests and coverage
+    runs-on: ubuntu-latest
+    services:
+      # Real Postgres and Redis, not mocks. The append-only trigger, refresh
+      # rotation, and rate limiting are all database and Redis behaviour — an
+      # ORM mock would pass while production stayed broken.
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: cc
+          POSTGRES_PASSWORD: cc_ci_password
+          POSTGRES_DB: career_copilot
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cc -d career_copilot"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://cc:cc_ci_password@localhost:5432/career_copilot?schema=public
+      REDIS_URL: redis://localhost:6379
+      API_URL: http://localhost:4000
+      WEB_URL: http://localhost:5173
+      # Test-only values. Real secrets never enter CI for a pull request.
+      JWT_SECRET: ci-only-jwt-secret-value-at-least-32-chars-long
+      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      AI_PROVIDER: mock
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @cc/shared build
+
+      - name: Apply migrations
+        # `migrate deploy`, never `migrate dev`: deploy is non-interactive and
+        # applies exactly the committed migrations. A migration that fails to
+        # apply to a clean database fails here rather than in production.
+        run: pnpm --filter @cc/api exec prisma migrate deploy
+
+      - name: Run tests with coverage
+        run: pnpm test:coverage
+
+      - name: Upload coverage
+        if: always() # useful precisely when the run failed
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage
+          path: apps/api/coverage/
+          retention-days: 7
+
+  # ── Build and bundle budget ────────────────────────────────────────────────
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Check bundle budget
+        # A performance budget nobody enforces is a wish. This fails the build.
+        run: node scripts/check-bundle-size.mjs
+
+  # ── Dependency audit ───────────────────────────────────────────────────────
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Audit
+        run: pnpm audit --audit-level high
+
+  # ── Container image ────────────────────────────────────────────────────────
+  docker:
+    name: Image build and scan
+    runs-on: ubuntu-latest
+    needs: [static]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          load: true
+          tags: cc-api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan image
+        uses: aquasecurity/trivy-action@2736533278103862a861f4a35ebac3e97854d956 # master
+        with:
+          image-ref: cc-api:${{ github.sha }}
+          format: table
+          exit-code: '1' # a HIGH or CRITICAL finding fails the build
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true # no fix available means no action to take
+
+      - name: Check image size
+        run: |
+          # The gate is 800 MB; the TARGET is 300 MB and is currently unmet —
+          # the image measures ~751 MB. A gate pinned at an aspiration fails on
+          # every run and gets switched off, so this one is set where it can
+          # actually catch a regression while the real target stays recorded in
+          # docs/00-TRD.md and docs/tracker.md as work still to do.
+          #
+          # The weight is Prisma: @prisma/client@7 pulls a large runtime, and
+          # `pnpm deploy --legacy` cannot drop the CLI toolchain that comes with
+          # it. Pruning it by hand got to 464 MB and broke startup.
+          BYTES=$(docker image inspect cc-api:${{ github.sha }} --format '{{.Size}}')
+          MB=$((BYTES / 1024 / 1024))
+          echo "Image size: ${MB} MB (gate 800 MB, target 300 MB)"
+          if [ "$MB" -gt 800 ]; then
+            echo "::error::Image is ${MB} MB, over the 800 MB regression gate"
+            exit 1
+          fi
+          if [ "$MB" -gt 300 ]; then
+            echo "::warning::Image is ${MB} MB, over the 300 MB target (tracked)"
+          fi

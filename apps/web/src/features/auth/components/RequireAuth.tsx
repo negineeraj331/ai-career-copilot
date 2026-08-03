@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router';
 import { useSession } from '../hooks/useSession.js';
 import { Skeleton } from '../../../components/feedback/States.js';
 

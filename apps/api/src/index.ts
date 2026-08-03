@@ -1,14 +1,32 @@
-import { config as loadDotenv } from 'dotenv';
+// Marks this file as a module. With every import now dynamic, TypeScript would
+// otherwise treat it as a classic script, where top-level `await` is invalid.
+export {};
 
-// Load .env before anything reads process.env — env.ts validates at import time
-// through its callers, and pulling this in later would be a race.
-loadDotenv({ path: ['../../.env', '.env'], quiet: true });
+/**
+ * Load .env in development only, and dynamically.
+ *
+ * A production container takes its configuration from the orchestrator, never
+ * from a file baked into the image — so dotenv is a dev dependency and is not
+ * present in the production tree at all. A static top-level import therefore
+ * crashed the container on startup with ERR_MODULE_NOT_FOUND before a single
+ * line of the app ran. Guarding on NODE_ENV keeps local development working
+ * while leaving production untouched; the catch covers the case where the
+ * package is simply absent.
+ */
+if (process.env.NODE_ENV !== 'production') {
+  try {
+    const { config: loadDotenv } = await import('dotenv');
+    loadDotenv({ path: ['../../.env', '.env'], quiet: true });
+  } catch {
+    // No dotenv installed — configuration must already be in the environment.
+  }
+}
 
 const { loadEnv } = await import('./config/env.js');
 
 // Validate configuration before anything else is constructed. A service must
 // never start half-configured (TR-01).
-let config;
+let config: Awaited<ReturnType<typeof loadEnv>>;
 try {
   config = loadEnv();
 } catch (error) {

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 import { LIMITS, registerSchema, type RegisterInput } from '@cc/shared';
 import { ApiError } from '../../../lib/api-client.js';
 import { Button } from '../../../components/ui/Button.js';

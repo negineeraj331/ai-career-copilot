@@ -1,4 +1,4 @@
-import type { VerificationTokenType } from '@prisma/client';
+import type { VerificationTokenType } from '../../generated/prisma/index.js';
 import { generateToken, hashToken } from '../../core/crypto/tokens.js';
 import { prisma } from '../../core/db/prisma.js';
 

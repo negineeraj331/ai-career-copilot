@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter } from 'react-router';
 import { createQueryClient } from './lib/query-client.js';
 import { AppRoutes } from './routes.js';
 

@@ -5,7 +5,15 @@ import prettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/build/**', '**/coverage/**', '**/node_modules/**', '**/*.d.ts'],
+    ignores: [
+      '**/dist/**',
+      '**/build/**',
+      '**/coverage/**',
+      '**/node_modules/**',
+      '**/*.d.ts',
+      // Generated Prisma client — a build artifact, not authored code.
+      'apps/api/src/generated/**',
+    ],
   },
 
   js.configs.recommended,
@@ -140,8 +148,19 @@ export default tseslint.config(
 
   // Config files run in Node and often need default exports.
   {
-    files: ['**/*.config.{ts,js}', 'eslint.config.js'],
+    files: ['**/*.config.{ts,js}', 'eslint.config.js', 'commitlint.config.js'],
     rules: {
+      'no-restricted-syntax': 'off',
+    },
+  },
+
+  // Build and CI scripts. `console` IS their user interface — they run in a
+  // terminal and a CI log, where the structured logger has no meaning and no
+  // destination. Banning it here would only push people to `process.stdout`.
+  {
+    files: ['scripts/**/*.{js,mjs,ts}'],
+    rules: {
+      'no-console': 'off',
       'no-restricted-syntax': 'off',
     },
   },

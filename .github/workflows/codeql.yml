@@ -1,0 +1,33 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly. Scheduled runs catch newly-published rules against code that has
+    # not changed — which is most of the code, most of the time.
+    - cron: '17 4 * * 1'
+
+permissions:
+  contents: read
+  security-events: write # required to upload results to the Security tab
+
+jobs:
+  analyze:
+    name: Analyse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - uses: github/codeql-action/init@e60ea984bd3baa95954f2856bcf24f9eaba46637 # v3
+        with:
+          languages: javascript-typescript
+          # security-and-quality adds maintainability rules on top of the
+          # security set; the noise is worth it on a codebase this size.
+          queries: security-and-quality
+
+      - uses: github/codeql-action/analyze@e60ea984bd3baa95954f2856bcf24f9eaba46637 # v3
+        with:
+          category: '/language:javascript-typescript'

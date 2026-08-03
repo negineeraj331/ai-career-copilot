@@ -1,0 +1,40 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    # Grouped so a routine week is one reviewable PR rather than fifteen that
+    # each burn a full CI run. Security updates still arrive individually and
+    # immediately — those are the ones worth interrupting for.
+    groups:
+      production:
+        dependency-type: production
+        update-types: [minor, patch]
+      development:
+        dependency-type: development
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore
+      include: scope
+
+  # The actions are SHA-pinned, which means they cannot drift — and also means
+  # nothing updates them unless something is watching. This is that something.
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: docker
+    directory: /apps/api
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: chore

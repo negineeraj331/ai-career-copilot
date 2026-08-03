@@ -4,6 +4,17 @@
 
 generator client {
   provider = "prisma-client-js"
+
+  // Generated into our own source tree, not node_modules.
+  //
+  // Two problems this solves. First, `pnpm install` wipes a client generated
+  // into the pnpm store, so the API stops booting until someone remembers to
+  // regenerate — previously papered over with a postinstall hook. Second, and
+  // fatally for deployment, `pnpm deploy` relinks a clean @prisma/client from
+  // the store, so the production container started with a stub that has no
+  // PrismaClient export at all. As a build artifact under src/, the client
+  // travels with the code that imports it.
+  output = "../src/generated/prisma"
 }
 
 // Prisma 7 removed `url` from the datasource block. The connection string now

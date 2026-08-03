@@ -1,0 +1,26 @@
+# Never let a real environment file into an image layer. Layers are extractable
+# even when a later step deletes the file.
+.env
+.env.*
+!.env.example
+
+node_modules
+**/node_modules
+**/dist
+**/coverage
+**/.turbo
+
+.git
+.github
+docs
+*.md
+!README.md
+
+**/*.test.ts
+**/*.test.tsx
+**/tests
+**/e2e
+
+.vscode
+.idea
+.DS_Store

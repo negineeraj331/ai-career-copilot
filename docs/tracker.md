@@ -1,7 +1,7 @@
 # Build Tracker — Career Copilot
 
 **Last updated:** 2026-08-03 · Owner: Neeraj Negi
-**Current phase:** Phase 0 — Foundation · **Current slice:** 0.8 CI/CD pipeline (next)
+**Current phase:** Phase 0 — Foundation · **Current phase complete.** Next: Phase 1, slice 1.1 (resume model)
 
 This is the live status of the build. The [roadmap](./17-feature-roadmap.md) says what we
 intend to build and in what order; this file says what actually exists right now. Update it in
@@ -17,13 +17,13 @@ people trust it.
 | Phase                     | Slices done | Status |
 | ------------------------- | ----------- | ------ |
 | Documentation             | 19 / 19     | `DONE` |
-| Phase 0 — Foundation      | 6.9 / 8     | `WIP`  |
+| Phase 0 — Foundation      | 8 / 8       | `DONE` |
 | Phase 1 — Core loop       | 0 / 9       | `TODO` |
 | Phase 2 — Retention       | 0 / 7       | `TODO` |
 | Phase 3 — Differentiation | 0 / 7       | `TODO` |
 | Phase 4 — Scale           | 0 / 8       | `TODO` |
 
-**Deployed:** nothing yet. **Tests:** 146 passing (46 unit, 100 integration). **Pipeline:** not yet configured.
+**Deployed:** nothing yet. **Tests:** 173 passing (73 unit, 100 integration). **Coverage:** 91.0% API lines. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
 
 ---
 
@@ -65,7 +65,7 @@ people trust it.
 - [x] ESLint flat config with layer-boundary rules (controller↛Prisma, service↛express, ats↛I/O)
 - [x] `docker-compose.yml` — Postgres 16 + pgvector, Redis 7, MinIO + bucket init, Mailpit
 - [x] `.env.example` with every variable named
-- [ ] Husky + lint-staged + commitlint
+- [x] Husky + lint-staged + commitlint (both directions tested)
 
 **Verified:** `pnpm install` clean · `pnpm lint` exit 0 · `pnpm format:check` clean ·
 `docker compose config` valid · all four containers boot healthy.
@@ -258,13 +258,63 @@ crossfade, where interruptible animation genuinely earns its weight. docs/00 upd
 password while still printing the new one — credentials that simply did not work. It now
 converges the password on every run.
 
-### 0.8 Pipeline `TODO`
+### 0.8 Pipeline `DONE`
 
-- [ ] `ci.yml`: lint, typecheck, unit, integration (service containers), coverage gate, build, bundle size, audit, Docker build, Trivy
-- [ ] `deploy-staging.yml` and `deploy-production.yml` with health check + rollback
-- [ ] `codeql.yml`, `nightly.yml`, `dependabot.yml`
-- [ ] Branch protection on `main` and `develop`
-- [ ] Notification webhook
+- [x] `ci.yml`: static matrix (lint/format/typecheck), tests on real Postgres + Redis service
+      containers, coverage gate, build, bundle budget, dependency audit, image build + Trivy
+- [x] `deploy.yml`: staging on `develop`, production on `main`, environment gate, migrations
+      before deploy, polled health check, rollback on failure, notification
+- [x] `codeql.yml` weekly + on PR · `dependabot.yml` for npm, actions, and Docker
+- [x] All 10 actions pinned to commit SHAs, resolved via the GitHub API
+- [x] Multi-stage Dockerfile, non-root, working `HEALTHCHECK`
+- [x] `scripts/check-bundle-size.mjs` enforcing the 250 KB initial-JS budget
+- [ ] Branch protection on `main`/`develop` — needs a GitHub remote, which does not exist yet
+
+**Verified:** every CI command run locally (lint, format, typecheck, build, bundle budget,
+migrate deploy, audit, tests). All workflow YAML parses. The container was built, run against
+the real Postgres and Redis, and serves: `/health`, `/health/ready` reporting all dependencies
+ok, a real login returning a user, Docker's own `HEALTHCHECK` reporting `healthy`, and the
+process running as non-root (uid 100).
+
+**Running the CI commands locally found three real problems** that reading the YAML would not
+have. A `no-console` lint failure in the new bundle script (console _is_ a CI script's
+interface — `scripts/**` is now exempt). Three unformatted files. And a **HIGH-severity
+advisory**: react-router had a CSRF bypass, patched in v8. We do not use the affected RSC mode,
+but "not reachable" is not a reason to ship a known-vulnerable version — migrated to
+`react-router@8` (the `react-router-dom` package is folded into it in v8). Audit is now clean.
+
+**The Dockerfile took six attempts, each a genuine bug:**
+
+1. `tsconfig.base.json` was never copied, so `extends` resolved to nothing and tsc fell back to
+   defaults — the build died inside a dependency's `.d.ts` files looking like a broken package.
+2. The API build step was missing entirely; the runtime stage copied a `dist` that never existed.
+3. `pnpm prune` aborts without a TTY. `CI=true` fixes it.
+4. `husky init` had silently rewritten `prepare` from `husky || true` to `husky`, so pruning dev
+   dependencies removed husky and the lifecycle script then failed — this would have broken
+   **any** production install, not just Docker.
+5. `dotenv` was a top-level import but a dev dependency, so the container crashed on startup
+   before running a line. Now a guarded dynamic import: production takes config from the
+   orchestrator, never from a file in the image.
+6. The generated Prisma client lived in `node_modules`, and `pnpm deploy` relinked a clean
+   `@prisma/client` over it — the container started with a stub that has no `PrismaClient`
+   export. Fixed properly by generating into `apps/api/src/generated` so the client is a build
+   artifact that travels with the code. That also removed the `postinstall: prisma generate`
+   hack added in slice 0.7.
+
+**Image size: 751 MB against a 300 MB target — unmet, and recorded rather than hidden.**
+`@prisma/client@7` ships a large runtime and peer-depends on the `prisma` CLI, which drags in
+Studio, `effect`, and TypeScript; `--prod` cannot drop them. Deleting those directories reaches
+464 MB and was tried, but it also removes `@prisma/client-runtime-utils`, which the generated
+client loads at startup — a smaller image that does not boot is worth nothing. The CI gate sits
+at 800 MB so it catches a regression; a gate pinned at an aspiration is one people switch off.
+Closing this needs a slimmer base and Prisma's own trimming guidance.
+
+**Coverage rose from 83.7% to 91.0%** by writing tests that were genuinely missing rather than
+by lowering the bar: the real OAuth provider adapters (19% and 23%, because every integration
+test used a stub — and they hold the provider-specific traps, like GitHub answering 200 with an
+error body) and the account-management flows (change password, sign out everywhere, resend
+verification) which had no tests at all. docs/13 now carries measured numbers, and records that
+auth is 94.7% against a stated 95% target.
 
 ---
 
@@ -286,34 +336,38 @@ stale before they are used.
 
 ## Decisions log
 
-| Date       | Decision                                                        | Rationale                                                                                                                                                                                                |
-| ---------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-08-03 | Own git repo inside the project folder                          | The enclosing repo was rooted at `/Users/neerajnegi` and tracked SSH keys, shell history, and Google Drive. Committing from there would have staged secrets. The home repo was left untouched.           |
-| 2026-08-03 | Express over NestJS                                             | Explicit layering keeps every mechanism legible at this codebase size. [ADR-002](./00-TRD.md#adr-002--express-over-nestjs)                                                                               |
-| 2026-08-03 | ATS scoring is deterministic, not LLM-generated                 | Reproducible, free, testable, and defensible when a user asks why they scored 78. [ADR-003](./00-TRD.md#adr-003--deterministic-ats-scoring-llm-assisted-explanation)                                     |
-| 2026-08-03 | Provider-agnostic AI layer, Claude default                      | Model price and quality move quarterly; binding business logic to one SDK is a liability. [ADR-004](./00-TRD.md#adr-004--provider-agnostic-ai-layer-with-claude-as-default)                              |
-| 2026-08-03 | Embeddings are a separate interface from chat                   | The default chat provider exposes no embeddings endpoint. Collapsing the two would have coupled semantic matching to a capability the adapter does not have. [AI §2](./11-ai-prompt-design.md)           |
-| 2026-08-03 | argon2id instead of the specified bcrypt                        | Memory-hard; degrades GPU cracking in a way bcrypt does not. bcrypt at cost ≥ 12 remains an acceptable fallback.                                                                                         |
-| 2026-08-03 | No auto-apply, ever                                             | Violates job-platform terms, produces low-quality mass applications, risks user account bans. [PRD NG2](./01-PRD.md#4-goals-and-non-goals)                                                               |
-| 2026-08-03 | Dedicated host port block (55432/56379/59000/59001/51025/58025) | 5432 and 5433 are both answered by other Postgres servers on this machine, one invisible to `lsof`. Default ports risked migrating the wrong database.                                                   |
-| 2026-08-03 | `AuditLog.userId` carries no foreign key                        | `SetNull` issues an UPDATE the append-only trigger refuses, making account deletion impossible (NFR-51); `Cascade` would erase the trail being audited. Caught by an integration test.                   |
-| 2026-08-03 | Append-only enforced by trigger, not `REVOKE`                   | A grant does not bind the table owner, and in development the app role _is_ the owner — the guarantee would fail exactly where it is easiest to violate.                                                 |
-| 2026-08-03 | BRIN index on `AuditLog.createdAt` deferred                     | Prisma models indexes and has no BRIN support, so every `migrate diff` regenerates a DROP for it. Composite B-trees cover the queries until scale justifies an out-of-band migration.                    |
-| 2026-08-03 | `citext` for email deferred                                     | Needs Prisma's `postgresqlExtensions` preview feature. Normalisation happens at the Zod boundary instead; documented rather than silently assumed.                                                       |
-| 2026-08-03 | Framer Motion dropped from the web app                          | 42 KB gzip on the landing critical path for three fade-ins CSS does free. Returns in Phase 1 where interruptible animation is actually needed.                                                           |
-| 2026-08-03 | `postinstall: prisma generate` on @cc/api                       | Any `pnpm install` wipes the generated client, so the API fails to boot until someone remembers to regenerate it.                                                                                        |
-| 2026-08-03 | Web on port 55173                                               | 5173 is held by another local project, IPv6-only — an IPv4 probe wrongly reported it free. `strictPort` surfaced it instead of sliding to 5174 and breaking CORS.                                        |
-| 2026-08-03 | Tailwind 4, CSS-first, no JS config                             | `@theme` in tokens.css is the single source of truth the design system asks for; a JS config would mirror the same values in a second place.                                                             |
-| 2026-08-03 | GitHub adapter declares `supportsPkce: false`                   | GitHub OAuth Apps ignore a PKCE challenge silently, so sending one would make the code and docs claim a protection that is not applied.                                                                  |
-| 2026-08-03 | OAuth email matching requires provider verification             | Otherwise registering `victim@example.com` at an identity provider takes over the matching account here.                                                                                                 |
-| 2026-08-03 | Unlink refuses to remove the last login method                  | An account with no password and no provider is unreachable by anyone while still holding the user's data.                                                                                                |
-| 2026-08-03 | Reuse-detection revocation commits outside the transaction      | Throwing from inside a Prisma interactive transaction rolls it back, so the family revocation was silently undone while the response claimed success.                                                    |
-| 2026-08-03 | Login limiter keyed on IP, not email+IP                         | Keyed per-email it duplicated account lockout, masked its better message, and never caught spraying across accounts — the attack a limiter exists to stop.                                               |
-| 2026-08-03 | Cookie helpers live outside the service layer                   | `tokens.service.ts` importing express violated the layer rule the ESLint config enforces; writing a cookie is an HTTP concern.                                                                           |
-| 2026-08-03 | Password context match needs 5+ characters                      | A 4-character minimum rejected legitimate passwords over generic email fragments (`info`, `live`), which users cannot make sense of.                                                                     |
-| 2026-08-03 | Rate limiter failure mode is per-class, not global              | A blanket fail-closed turns a Redis blip into a full API outage, contradicting the availability SLO. Auth-sensitive routes fail closed; the rest fail open loudly. Supersedes the original blanket rule. |
-| 2026-08-03 | Redis offline queue stays enabled                               | With it off, any command issued during a reconnect is rejected — a one-second failover would 503 every sign-in. `commandTimeout` bounds the wait instead.                                                |
-| 2026-08-03 | API on port 54000                                               | Another local project owns 4000; `localhost` resolved to it, so the API appeared to start while requests reached the other app.                                                                          |
+| Date       | Decision                                                        | Rationale                                                                                                                                                                                                  |
+| ---------- | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-08-03 | Own git repo inside the project folder                          | The enclosing repo was rooted at `/Users/neerajnegi` and tracked SSH keys, shell history, and Google Drive. Committing from there would have staged secrets. The home repo was left untouched.             |
+| 2026-08-03 | Express over NestJS                                             | Explicit layering keeps every mechanism legible at this codebase size. [ADR-002](./00-TRD.md#adr-002--express-over-nestjs)                                                                                 |
+| 2026-08-03 | ATS scoring is deterministic, not LLM-generated                 | Reproducible, free, testable, and defensible when a user asks why they scored 78. [ADR-003](./00-TRD.md#adr-003--deterministic-ats-scoring-llm-assisted-explanation)                                       |
+| 2026-08-03 | Provider-agnostic AI layer, Claude default                      | Model price and quality move quarterly; binding business logic to one SDK is a liability. [ADR-004](./00-TRD.md#adr-004--provider-agnostic-ai-layer-with-claude-as-default)                                |
+| 2026-08-03 | Embeddings are a separate interface from chat                   | The default chat provider exposes no embeddings endpoint. Collapsing the two would have coupled semantic matching to a capability the adapter does not have. [AI §2](./11-ai-prompt-design.md)             |
+| 2026-08-03 | argon2id instead of the specified bcrypt                        | Memory-hard; degrades GPU cracking in a way bcrypt does not. bcrypt at cost ≥ 12 remains an acceptable fallback.                                                                                           |
+| 2026-08-03 | No auto-apply, ever                                             | Violates job-platform terms, produces low-quality mass applications, risks user account bans. [PRD NG2](./01-PRD.md#4-goals-and-non-goals)                                                                 |
+| 2026-08-03 | Dedicated host port block (55432/56379/59000/59001/51025/58025) | 5432 and 5433 are both answered by other Postgres servers on this machine, one invisible to `lsof`. Default ports risked migrating the wrong database.                                                     |
+| 2026-08-03 | `AuditLog.userId` carries no foreign key                        | `SetNull` issues an UPDATE the append-only trigger refuses, making account deletion impossible (NFR-51); `Cascade` would erase the trail being audited. Caught by an integration test.                     |
+| 2026-08-03 | Append-only enforced by trigger, not `REVOKE`                   | A grant does not bind the table owner, and in development the app role _is_ the owner — the guarantee would fail exactly where it is easiest to violate.                                                   |
+| 2026-08-03 | BRIN index on `AuditLog.createdAt` deferred                     | Prisma models indexes and has no BRIN support, so every `migrate diff` regenerates a DROP for it. Composite B-trees cover the queries until scale justifies an out-of-band migration.                      |
+| 2026-08-03 | `citext` for email deferred                                     | Needs Prisma's `postgresqlExtensions` preview feature. Normalisation happens at the Zod boundary instead; documented rather than silently assumed.                                                         |
+| 2026-08-03 | Prisma client generated into `src/generated`                    | In node_modules it was wiped by every install and replaced by `pnpm deploy`, so the production container booted with a stub lacking the PrismaClient export. As a build artifact it travels with the code. |
+| 2026-08-03 | Migrated to react-router v8                                     | A HIGH advisory (CSRF bypass) in v7. The affected RSC mode is unused, but shipping a known-vulnerable version because the path looks unreachable is not a decision worth defending.                        |
+| 2026-08-03 | Image-size gate at 800 MB, target 300 MB                        | The target is unmet at 751 MB for reasons inside Prisma's packaging. A gate set to an aspiration fails every run and gets disabled; this one catches regressions while the target stays recorded.          |
+| 2026-08-03 | dotenv loaded only outside production                           | A production container takes config from the orchestrator. A static import of a dev dependency crashed the container before any application code ran.                                                      |
+| 2026-08-03 | Framer Motion dropped from the web app                          | 42 KB gzip on the landing critical path for three fade-ins CSS does free. Returns in Phase 1 where interruptible animation is actually needed.                                                             |
+| 2026-08-03 | `postinstall: prisma generate` on @cc/api                       | Any `pnpm install` wipes the generated client, so the API fails to boot until someone remembers to regenerate it.                                                                                          |
+| 2026-08-03 | Web on port 55173                                               | 5173 is held by another local project, IPv6-only — an IPv4 probe wrongly reported it free. `strictPort` surfaced it instead of sliding to 5174 and breaking CORS.                                          |
+| 2026-08-03 | Tailwind 4, CSS-first, no JS config                             | `@theme` in tokens.css is the single source of truth the design system asks for; a JS config would mirror the same values in a second place.                                                               |
+| 2026-08-03 | GitHub adapter declares `supportsPkce: false`                   | GitHub OAuth Apps ignore a PKCE challenge silently, so sending one would make the code and docs claim a protection that is not applied.                                                                    |
+| 2026-08-03 | OAuth email matching requires provider verification             | Otherwise registering `victim@example.com` at an identity provider takes over the matching account here.                                                                                                   |
+| 2026-08-03 | Unlink refuses to remove the last login method                  | An account with no password and no provider is unreachable by anyone while still holding the user's data.                                                                                                  |
+| 2026-08-03 | Reuse-detection revocation commits outside the transaction      | Throwing from inside a Prisma interactive transaction rolls it back, so the family revocation was silently undone while the response claimed success.                                                      |
+| 2026-08-03 | Login limiter keyed on IP, not email+IP                         | Keyed per-email it duplicated account lockout, masked its better message, and never caught spraying across accounts — the attack a limiter exists to stop.                                                 |
+| 2026-08-03 | Cookie helpers live outside the service layer                   | `tokens.service.ts` importing express violated the layer rule the ESLint config enforces; writing a cookie is an HTTP concern.                                                                             |
+| 2026-08-03 | Password context match needs 5+ characters                      | A 4-character minimum rejected legitimate passwords over generic email fragments (`info`, `live`), which users cannot make sense of.                                                                       |
+| 2026-08-03 | Rate limiter failure mode is per-class, not global              | A blanket fail-closed turns a Redis blip into a full API outage, contradicting the availability SLO. Auth-sensitive routes fail closed; the rest fail open loudly. Supersedes the original blanket rule.   |
+| 2026-08-03 | Redis offline queue stays enabled                               | With it off, any command issued during a reconnect is rejected — a one-second failover would 503 every sign-in. `commandTimeout` bounds the wait instead.                                                  |
+| 2026-08-03 | API on port 54000                                               | Another local project owns 4000; `localhost` resolved to it, so the API appeared to start while requests reached the other app.                                                                            |
 
 ---
 

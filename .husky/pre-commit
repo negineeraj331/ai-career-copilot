@@ -1,0 +1,4 @@
+# Fast feedback on staged files only. Deliberately NOT the full test suite:
+# a pre-commit hook that takes a minute is a hook people learn to skip with
+# --no-verify. CI is the gate; this is the courtesy check.
+pnpm exec lint-staged

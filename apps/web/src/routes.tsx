@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes } from 'react-router';
 import { RedirectIfAuthenticated, RequireAuth } from './features/auth/components/RequireAuth.js';
 import { Skeleton } from './components/feedback/States.js';
 
