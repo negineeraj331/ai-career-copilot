@@ -148,21 +148,28 @@ export const limiters = {
       keyFor: (req) => req.header('x-user-id') ?? req.ip ?? 'unknown',
     }),
 
-  /** Login: 5 per 15 min per email+IP. Fails closed — see the note above. */
+  /**
+   * Login: 30 per 15 minutes **per IP**, failing closed.
+   *
+   * Keyed on IP alone, deliberately. An earlier version keyed on email+IP at 5
+   * attempts, which was wrong in two directions at once:
+   *
+   *   1. It duplicated the account lockout, which already stops brute force
+   *      against a single account at 5 failures. Because the thresholds were
+   *      identical the limiter always fired first, so users got a bare 429
+   *      instead of the lockout's specific message and backoff — the better
+   *      control was permanently masked by the worse one. An integration test
+   *      asserting lockout is what surfaced this.
+   *   2. It did not stop credential stuffing at all. Spraying one password
+   *      across a thousand accounts hands every email its own fresh bucket, so
+   *      a per-email key never trips.
+   *
+   * The two controls now cover different attacks: lockout is per account, this
+   * is per source. The budget sits well above the lockout threshold so the
+   * account-level message is what a legitimate user actually sees.
+   */
   login: (): RequestHandler =>
-    rateLimit({
-      name: 'login',
-      points: 5,
-      durationSeconds: 900,
-      failureMode: 'closed',
-      keyFor: (req) => {
-        const email =
-          typeof req.body === 'object' && req.body !== null && 'email' in req.body
-            ? String((req.body as { email?: unknown }).email ?? '')
-            : '';
-        return `${email.toLowerCase()}|${req.ip ?? 'unknown'}`;
-      },
-    }),
+    rateLimit({ name: 'login', points: 30, durationSeconds: 900, failureMode: 'closed' }),
 
   /** Registration: 3/hour per IP. Fails closed. */
   register: (): RequestHandler =>

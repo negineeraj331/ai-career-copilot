@@ -1,7 +1,7 @@
 # Build Tracker — Career Copilot
 
 **Last updated:** 2026-08-03 · Owner: Neeraj Negi
-**Current phase:** Phase 0 — Foundation · **Current slice:** 0.5 Authentication (next)
+**Current phase:** Phase 0 — Foundation · **Current slice:** 0.6 OAuth (next)
 
 This is the live status of the build. The [roadmap](./17-feature-roadmap.md) says what we
 intend to build and in what order; this file says what actually exists right now. Update it in
@@ -17,13 +17,13 @@ people trust it.
 | Phase                     | Slices done | Status |
 | ------------------------- | ----------- | ------ |
 | Documentation             | 19 / 19     | `DONE` |
-| Phase 0 — Foundation      | 3.9 / 8     | `WIP`  |
+| Phase 0 — Foundation      | 4.9 / 8     | `WIP`  |
 | Phase 1 — Core loop       | 0 / 9       | `TODO` |
 | Phase 2 — Retention       | 0 / 7       | `TODO` |
 | Phase 3 — Differentiation | 0 / 7       | `TODO` |
 | Phase 4 — Scale           | 0 / 8       | `TODO` |
 
-**Deployed:** nothing yet. **Tests:** 53 passing (26 unit, 27 integration). **Pipeline:** not yet configured.
+**Deployed:** nothing yet. **Tests:** 113 passing (35 unit, 78 integration). **Pipeline:** not yet configured.
 
 ---
 
@@ -145,14 +145,46 @@ while a dead Redis still fails fast.
 **Port 4000 was taken** by another local project, and `localhost` resolved to it — the API
 "started" while curl reached the other app. Moved to `:54000`, matching the datastore block.
 
-### 0.5 Authentication `TODO`
+### 0.5 Authentication `DONE`
 
-- [ ] Register + email verification · Login · Logout / logout-all
-- [ ] Refresh rotation with family reuse detection
-- [ ] Password reset · Magic link
-- [ ] Device session list and revoke
-- [ ] TOTP enrol/confirm/verify/disable + recovery codes
-- [ ] Progressive lockout · Audit logging
+- [x] Register with enumeration-safe responses + email verification
+- [x] Login with timing-equalised failure paths · Logout · Logout-all
+- [x] Refresh rotation with family reuse detection
+- [x] Password reset (revokes all sessions) · Magic link · Change password
+- [x] Device session list and revoke, with ownership checks
+- [x] TOTP enrol/confirm/verify/disable + 10 single-use recovery codes
+- [x] Progressive lockout (5 failures, 1→30 min backoff) · Audit logging
+- [x] Mailer behind an interface, in-memory double for tests
+
+**Verified:** typecheck clean · lint clean · 104 API tests pass · full flow exercised live
+against the running server, pulling the verification token out of Mailpit: register → verify →
+login → /me → refresh → sessions → audit log → logout → 401.
+
+**Three bugs found, two of them serious:**
+
+1. **Reuse detection revoked nothing.** The family revocation was written _inside_ the Prisma
+   interactive transaction and then the function threw — which rolls the transaction back. The
+   401 looked right, the audit entry appeared, and the stolen session stayed alive. Detection
+   now happens inside the transaction and revocation commits outside it. Caught by asserting
+   the post-conditions, not the status code.
+2. **Device sessions stored full IP addresses.** The controller built `ipPrefix` from `req.ip`
+   directly instead of the already-truncated request context, so sessions kept whole addresses
+   while the audit log correctly kept /24s. Then the truncation helper itself turned out to
+   mangle `::ffff:127.0.0.1` — the IPv4-mapped form Node returns on every dual-stack socket —
+   into `ffff:127.0.0.1::`. Tests passed throughout; a live run is what exposed both.
+   `truncateIp` now has its own unit tests.
+3. **The login rate limiter masked account lockout.** Keyed on email+IP at the same threshold
+   as lockout, so it always fired first and users got a bare 429 instead of the lockout's
+   message and backoff — and keyed per-email it never caught credential stuffing at all. Now
+   keyed on IP with a budget above the lockout threshold.
+
+**Also corrected:** an over-eager password/email similarity check rejected
+`live-thicket-marmalade-42` for `live-…@example.com` on the 4-character fragment "live"; the
+same rule would have rejected `information-security-99` for `info-desk@…`. Minimum matched
+fragment raised to five characters, with regression tests both ways.
+
+**Deferred, not claimed:** the breach-corpus (HIBP k-anonymity) half of the password check.
+The static denylist is implemented; docs/12 now says so explicitly.
 
 ### 0.6 OAuth `TODO`
 
@@ -209,6 +241,10 @@ stale before they are used.
 | 2026-08-03 | Append-only enforced by trigger, not `REVOKE`                   | A grant does not bind the table owner, and in development the app role _is_ the owner — the guarantee would fail exactly where it is easiest to violate.                                                 |
 | 2026-08-03 | BRIN index on `AuditLog.createdAt` deferred                     | Prisma models indexes and has no BRIN support, so every `migrate diff` regenerates a DROP for it. Composite B-trees cover the queries until scale justifies an out-of-band migration.                    |
 | 2026-08-03 | `citext` for email deferred                                     | Needs Prisma's `postgresqlExtensions` preview feature. Normalisation happens at the Zod boundary instead; documented rather than silently assumed.                                                       |
+| 2026-08-03 | Reuse-detection revocation commits outside the transaction      | Throwing from inside a Prisma interactive transaction rolls it back, so the family revocation was silently undone while the response claimed success.                                                    |
+| 2026-08-03 | Login limiter keyed on IP, not email+IP                         | Keyed per-email it duplicated account lockout, masked its better message, and never caught spraying across accounts — the attack a limiter exists to stop.                                               |
+| 2026-08-03 | Cookie helpers live outside the service layer                   | `tokens.service.ts` importing express violated the layer rule the ESLint config enforces; writing a cookie is an HTTP concern.                                                                           |
+| 2026-08-03 | Password context match needs 5+ characters                      | A 4-character minimum rejected legitimate passwords over generic email fragments (`info`, `live`), which users cannot make sense of.                                                                     |
 | 2026-08-03 | Rate limiter failure mode is per-class, not global              | A blanket fail-closed turns a Redis blip into a full API outage, contradicting the availability SLO. Auth-sensitive routes fail closed; the rest fail open loudly. Supersedes the original blanket rule. |
 | 2026-08-03 | Redis offline queue stays enabled                               | With it off, any command issued during a reconnect is rejected — a one-second failover would 503 every sign-in. `commandTimeout` bounds the wait instead.                                                |
 | 2026-08-03 | API on port 54000                                               | Another local project owns 4000; `localhost` resolved to it, so the API appeared to start while requests reached the other app.                                                                          |

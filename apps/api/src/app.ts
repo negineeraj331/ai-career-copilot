@@ -5,6 +5,7 @@ import { issueCsrfToken, verifyCsrf } from './core/security/csrf.js';
 import { corsMiddleware, securityHeaders } from './core/security/headers.js';
 import { limiters } from './core/security/rate-limit.js';
 import { requestContext } from './core/security/request-id.js';
+import { authRoutes } from './modules/auth/auth.routes.js';
 import { healthRoutes } from './modules/health/health.routes.js';
 
 /**
@@ -51,7 +52,9 @@ export function createApp(): Express {
   app.use('/api/v1', limiters.public());
   app.use('/api/v1', verifyCsrf);
 
-  // Feature routers mount here as slices land (auth in 0.5, resumes in 1.1).
+  app.use('/api/v1/auth', authRoutes());
+
+  // Further feature routers mount here as slices land (resumes in 1.1).
 
   app.use(notFoundHandler);
   app.use(errorHandler);

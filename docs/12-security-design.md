@@ -36,9 +36,21 @@ with a per-password random salt. Not bcrypt — argon2id is memory-hard, which i
 that actually degrades GPU cracking. The spec named bcrypt; this is a deliberate upgrade, and
 bcrypt would still be acceptable at cost factor ≥ 12 if a platform constraint forced it.
 
-Password policy: minimum 12 characters, checked against a common-password deny list and a
-breach corpus. **No composition rules.** Requiring a symbol and a digit reliably produces
-`Password1!` — length and denylisting are the controls with evidence behind them.
+Password policy: minimum 12 characters, checked against a common-password deny list.
+**No composition rules.** Requiring a symbol and a digit reliably produces `Password1!` —
+length and denylisting are the controls with evidence behind them.
+
+The denylist deliberately targets _long_ weak passwords — padded repeats, keyboard walks, and
+the phrases people reach for when a site demands twelve characters. The familiar "top 10,000"
+lists are dominated by short strings the length minimum already rejects. Passwords are also
+checked against the user's own email and name, with a five-character minimum on the matched
+fragment: shorter terms produce baffling false positives (`info-desk@…` would otherwise reject
+`information-security-99`).
+
+**Not yet implemented: the breach-corpus check.** A k-anonymity lookup against Have I Been
+Pwned is the control that catches passwords unique enough to miss any static list but known to
+be compromised. It needs a network call with a timeout, a cache, and a fail-open/fail-closed
+decision. Tracked rather than silently claimed.
 
 ### 2.2 Token architecture
 

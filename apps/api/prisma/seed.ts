@@ -22,7 +22,9 @@ const ARGON2_OPTIONS = {
   parallelism: 1,
 } as const;
 
-const DEMO_PASSWORD = 'correct horse battery staple';
+// Not the xkcd phrase: that one is now on the denylist (it is genuinely in
+// every breach corpus), so registering with it would be rejected.
+const DEMO_PASSWORD = 'seeded-lantern-oxide-97';
 
 async function main(): Promise<void> {
   if (process.env.NODE_ENV === 'production') {

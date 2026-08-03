@@ -93,19 +93,28 @@ mid-scroll, which is exactly what happens on a live dashboard.
 
 ### 1.6 Rate limits
 
-| Class                  | Limit      | Window                        |
-| ---------------------- | ---------- | ----------------------------- |
-| Unauthenticated        | 30 req     | 1 min / IP                    |
-| Authenticated          | 300 req    | 1 min / user                  |
-| Login                  | 5 attempts | 15 min / email+IP             |
-| Registration           | 3          | 1 h / IP                      |
-| Password reset request | 3          | 1 h / email                   |
-| AI endpoints           | 20         | 1 min / user, plus plan quota |
-| Upload                 | 10         | 1 h / user                    |
-| Export                 | 30         | 1 h / user                    |
+| Class                  | Limit   | Window                        |
+| ---------------------- | ------- | ----------------------------- |
+| Unauthenticated        | 30 req  | 1 min / IP                    |
+| Authenticated          | 300 req | 1 min / user                  |
+| Login                  | 30 req  | 15 min / IP                   |
+| Registration           | 3       | 1 h / IP                      |
+| Password reset request | 3       | 1 h / email                   |
+| AI endpoints           | 20      | 1 min / user, plus plan quota |
+| Upload                 | 10      | 1 h / user                    |
+| Export                 | 30      | 1 h / user                    |
 
 Responses carry `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and
 `Retry-After` on 429.
+
+**Rate limiting and account lockout are different controls and must not be confused.** The
+login limiter is keyed on **IP** and catches credential stuffing — one source spraying a
+password across many accounts. Account lockout (FR-10) is keyed on **email+IP** at 5 failures
+and catches brute force against one account, returning `423 ACCOUNT_LOCKED` with a progressive
+backoff. An earlier design keyed the limiter on email+IP at the same threshold as lockout,
+which both duplicated it and never fired for the attack a limiter exists to stop; the limiter
+budget now sits well above the lockout threshold so the account-level message is what a
+legitimate user sees.
 
 ### 1.7 Idempotency
 
