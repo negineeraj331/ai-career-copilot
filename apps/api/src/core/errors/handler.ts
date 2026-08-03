@@ -11,6 +11,7 @@ import {
   RateLimitedError,
   ServiceUnavailableError,
   ValidationError,
+  VersionConflictError,
   isAppError,
 } from './app-error.js';
 
@@ -92,6 +93,9 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
   }
   if (appError instanceof ServiceUnavailableError && appError.retryAfterSeconds) {
     res.setHeader('Retry-After', String(appError.retryAfterSeconds));
+  }
+  if (appError instanceof VersionConflictError) {
+    res.setHeader('X-Current-Version', String(appError.currentVersion));
   }
 
   // If the response already started streaming we cannot rewrite the status;

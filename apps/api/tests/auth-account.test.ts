@@ -44,9 +44,9 @@ afterAll(async () => {
 
 async function signedIn(): Promise<Client> {
   await post(client, `${API}/register`, { email: EMAIL, password: STRONG_PASSWORD }).expect(201);
-  await post(client, `${API}/verify-email`, { token: tokenFromEmail('verify your email') }).expect(
-    200,
-  );
+  await post(client, `${API}/verify-email`, {
+    token: tokenFromEmail('verify your email', EMAIL),
+  }).expect(200);
   await post(client, `${API}/login`, { email: EMAIL, password: STRONG_PASSWORD }).expect(200);
   return client;
 }
@@ -107,7 +107,7 @@ describe('change password', () => {
       newPassword: NEW_PASSWORD,
     }).expect(200);
     // A password change the account owner did not make must be visible to them.
-    expect(emailWasSent('your password was changed')).toBe(true);
+    expect(emailWasSent('your password was changed', EMAIL)).toBe(true);
   });
 
   it('requires authentication', async () => {
@@ -153,15 +153,15 @@ describe('resend verification', () => {
     testMailer().clear();
 
     await post(client, `${API}/resend-verification`, { email: EMAIL }).expect(200);
-    expect(emailWasSent('verify your email')).toBe(true);
+    expect(emailWasSent('verify your email', EMAIL)).toBe(true);
   });
 
   it('invalidates the previous link', async () => {
     await post(client, `${API}/register`, { email: EMAIL, password: STRONG_PASSWORD }).expect(201);
-    const firstToken = tokenFromEmail('verify your email');
+    const firstToken = tokenFromEmail('verify your email', EMAIL);
 
     await post(client, `${API}/resend-verification`, { email: EMAIL }).expect(200);
-    const secondToken = tokenFromEmail('verify your email');
+    const secondToken = tokenFromEmail('verify your email', EMAIL);
     expect(secondToken).not.toBe(firstToken);
 
     // Requesting a new link retires the old one — otherwise a link from an
@@ -183,6 +183,6 @@ describe('resend verification', () => {
     testMailer().clear();
 
     await post(client, `${API}/resend-verification`, { email: EMAIL }).expect(200);
-    expect(emailWasSent('verify your email')).toBe(false);
+    expect(emailWasSent('verify your email', EMAIL)).toBe(false);
   });
 });

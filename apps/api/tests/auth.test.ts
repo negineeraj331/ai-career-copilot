@@ -42,7 +42,7 @@ afterAll(async () => {
 /** Registers and verifies, leaving an account ready to sign in with. */
 async function registerVerified(email = EMAIL): Promise<void> {
   await post(client, `${API}/register`, { email, password: STRONG_PASSWORD }).expect(201);
-  const token = tokenFromEmail('verify your email');
+  const token = tokenFromEmail('verify your email', email);
   await post(client, `${API}/verify-email`, { token }).expect(200);
 }
 
@@ -55,7 +55,7 @@ describe('registration', () => {
     }).expect(201);
 
     expect(res.body.data.email).toBe(EMAIL);
-    expect(emailWasSent('verify your email')).toBe(true);
+    expect(emailWasSent('verify your email', EMAIL)).toBe(true);
 
     const user = await prisma().user.findUnique({ where: { email: EMAIL } });
     expect(user).not.toBeNull();
@@ -86,8 +86,8 @@ describe('registration', () => {
     // A distinguishable response here is a free account-enumeration oracle.
     expect(second.body.data).toEqual(first.body.data);
     // ...and the real owner is told someone tried.
-    expect(emailWasSent('someone tried to create an account')).toBe(true);
-    expect(emailWasSent('verify your email')).toBe(false);
+    expect(emailWasSent('someone tried to create an account', EMAIL)).toBe(true);
+    expect(emailWasSent('verify your email', EMAIL)).toBe(false);
 
     expect(await prisma().user.count({ where: { email: EMAIL } })).toBe(1);
   });
@@ -143,7 +143,7 @@ describe('registration', () => {
 describe('email verification', () => {
   it('verifies with a valid token', async () => {
     await post(client, `${API}/register`, { email: EMAIL, password: STRONG_PASSWORD }).expect(201);
-    const token = tokenFromEmail('verify your email');
+    const token = tokenFromEmail('verify your email', EMAIL);
 
     await post(client, `${API}/verify-email`, { token }).expect(200);
 
@@ -153,7 +153,7 @@ describe('email verification', () => {
 
   it('refuses to reuse a token', async () => {
     await post(client, `${API}/register`, { email: EMAIL, password: STRONG_PASSWORD }).expect(201);
-    const token = tokenFromEmail('verify your email');
+    const token = tokenFromEmail('verify your email', EMAIL);
 
     await post(client, `${API}/verify-email`, { token }).expect(200);
     // Single use: the consume is guarded inside the UPDATE, so a replay finds nothing.
@@ -316,7 +316,7 @@ describe('refresh token rotation', () => {
     });
     expect(audit).toBe(1);
 
-    expect(emailWasSent('security alert')).toBe(true);
+    expect(emailWasSent('security alert', EMAIL)).toBe(true);
   });
 
   it('rejects a refresh with no cookie', async () => {
@@ -379,7 +379,7 @@ describe('password reset', () => {
     await post(client, `${API}/login`, { email: EMAIL, password: STRONG_PASSWORD }).expect(200);
 
     await post(client, `${API}/forgot-password`, { email: EMAIL }).expect(200);
-    const token = tokenFromEmail('reset your password');
+    const token = tokenFromEmail('reset your password', EMAIL);
 
     const newPassword = 'brand-new-thicket-2026';
     await post(client, `${API}/reset-password`, { token, password: newPassword }).expect(200);
@@ -404,7 +404,7 @@ describe('password reset', () => {
   it('refuses to reuse a reset token', async () => {
     await registerVerified();
     await post(client, `${API}/forgot-password`, { email: EMAIL }).expect(200);
-    const token = tokenFromEmail('reset your password');
+    const token = tokenFromEmail('reset your password', EMAIL);
 
     await post(client, `${API}/reset-password`, {
       token,
@@ -423,7 +423,7 @@ describe('password reset', () => {
     }
 
     await post(client, `${API}/forgot-password`, { email: EMAIL }).expect(200);
-    const token = tokenFromEmail('reset your password');
+    const token = tokenFromEmail('reset your password', EMAIL);
     const newPassword = 'unlocked-thicket-2026';
     await post(client, `${API}/reset-password`, { token, password: newPassword }).expect(200);
 
@@ -437,7 +437,7 @@ describe('magic link', () => {
   it('signs in via an emailed link', async () => {
     await registerVerified();
     await post(client, `${API}/magic-link`, { email: EMAIL }).expect(200);
-    const token = tokenFromEmail('sign-in link');
+    const token = tokenFromEmail('sign-in link', EMAIL);
 
     const res = await post(client, `${API}/magic-link/verify`, { token }).expect(200);
     expect(res.body.data.user.email).toBe(EMAIL);
@@ -447,7 +447,7 @@ describe('magic link', () => {
   it('refuses to reuse the link', async () => {
     await registerVerified();
     await post(client, `${API}/magic-link`, { email: EMAIL }).expect(200);
-    const token = tokenFromEmail('sign-in link');
+    const token = tokenFromEmail('sign-in link', EMAIL);
 
     await post(client, `${API}/magic-link/verify`, { token }).expect(200);
     const fresh = await makeClient(app);

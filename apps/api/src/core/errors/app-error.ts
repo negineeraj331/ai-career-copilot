@@ -85,6 +85,35 @@ export class ConflictError extends AppError {
   }
 }
 
+/**
+ * Optimistic-concurrency failure on a versioned resource.
+ *
+ * docs/06 promises the 409 carries the server's current version, and a client
+ * cannot act on a number buried in an English sentence — the editor needs it to
+ * offer "reload and reapply". `details` is FieldError[] and holds strings only,
+ * so the number rides on the class and the handler puts it in a header, which
+ * is exactly how RateLimitedError already surfaces Retry-After.
+ */
+export class VersionConflictError extends AppError {
+  readonly currentVersion: number;
+  constructor(currentVersion: number, expectedVersion: number) {
+    super(
+      'CONFLICT',
+      409,
+      'This resume changed somewhere else. Reload to get the latest version.',
+      {
+        details: [
+          {
+            field: 'expectedVersion',
+            message: `Sent ${String(expectedVersion)}, but the current version is ${String(currentVersion)}.`,
+          },
+        ],
+      },
+    );
+    this.currentVersion = currentVersion;
+  }
+}
+
 export class PayloadTooLargeError extends AppError {
   constructor(message = 'That file is too large.') {
     super('PAYLOAD_TOO_LARGE', 413, message);
