@@ -1,7 +1,7 @@
 # Build Tracker — Career Copilot
 
 **Last updated:** 2026-08-04 · Owner: Neeraj Negi
-**Current phase:** Phase 1 — Core loop · slices 1.1–1.2 done. Next: slice 1.3 (editor)
+**Current phase:** Phase 1 — Core loop · slices 1.1–1.3 done. Next: slice 1.4 (templates)
 
 This is the live status of the build. The [roadmap](./17-feature-roadmap.md) says what we
 intend to build and in what order; this file says what actually exists right now. Update it in
@@ -18,12 +18,12 @@ people trust it.
 | ------------------------- | ----------- | ------ |
 | Documentation             | 19 / 19     | `DONE` |
 | Phase 0 — Foundation      | 8 / 8       | `DONE` |
-| Phase 1 — Core loop       | 2 / 9       | `WIP`  |
+| Phase 1 — Core loop       | 3 / 9       | `WIP`  |
 | Phase 2 — Retention       | 0 / 7       | `TODO` |
 | Phase 3 — Differentiation | 0 / 7       | `TODO` |
 | Phase 4 — Scale           | 0 / 8       | `TODO` |
 
-**Deployed:** nothing yet. **Tests:** 290 passing. **Coverage:** 91.7% API lines, 96.7% `@cc/ats`. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
+**Deployed:** nothing yet. **Tests:** 317 passing. **Coverage:** 91.7% API lines, 96.7% `@cc/ats`. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
 
 ---
 
@@ -382,8 +382,54 @@ Still open: a hosting target — open question 5, which slice 0.8 was meant to a
 
 ## Phase 1 — Core loop `WIP`
 
-`1.1` Resume model `DONE` · `1.2` ATS engine `DONE` · `1.3` Editor · `1.4` Templates ·
+`1.1` Resume model `DONE` · `1.2` ATS engine `DONE` · `1.3` Editor `DONE` · `1.4` Templates ·
 `1.5` Export · `1.6` AI layer · `1.7` JD analysis · `1.8` AI writing · `1.9` Versions
+
+### `1.3` Editor `DONE`
+
+- [x] Resume list: create, open, duplicate, delete, with the stored score shown
+- [x] Split-screen editor — section nav, form, live preview
+- [x] Section reorder: pointer drag, keyboard lift-and-move, and Move up / Move down buttons
+- [x] Show / hide sections, persisted in the document so a restored version renders as chosen
+- [x] Autosave 2 s after typing stops or on blur, with `expectedVersion` on every save
+- [x] Conflict handling: 409 → `X-Current-Version` → "reload theirs", never a silent overwrite
+- [x] Durable offline queue in IndexedDB, replayed on reconnect and on reopen
+- [x] Live ATS score with the per-rule fixes beside the form
+- [x] 27 new tests (18 reorder and document helpers, 9 autosave)
+
+**Verified:** lint, format, typecheck, build clean · 317 tests pass · initial bundle 95.1 KB of
+the 250 KB budget, the editor being lazy-loaded.
+
+**Two bugs the tests found, both real.** `orderedSections` did not deduplicate, so a document
+whose stored order repeated a key rendered that section twice and handed React two children
+with the same key — which it resolves by dropping one, silently and far from the cause. And
+`SectionReorder` moved focus with a global `document.querySelector`, which reaches the whole
+page: with a stale animation frame pending it focused a button belonging to a different render,
+and the next arrow key then acted on the wrong list. Both are now impossible — the second by
+scoping the query to a ref on the component's own list.
+
+**Three ways to reorder, not one.** docs/09 calls drag-only reordering an accessibility failure
+rather than a missing feature, so the keyboard protocol (space to lift, arrows to move, space to
+drop, Escape to cancel, `aria-live` at every step) and plain Move up / Move down buttons are
+both first-class. Drag is native HTML5 rather than `@dnd-kit`: one vertical list does not
+justify the bundle. The keyboard path has the most tests precisely because drag is the part
+jsdom cannot exercise, so it is the affordance that would rot unnoticed.
+
+**Deliberate deviations from docs/09 and docs/10, recorded rather than silent:**
+
+- **Controlled inputs instead of React Hook Form.** The preview and the score are functions of
+  the whole document, so the parent re-renders on every keystroke regardless; RHF would add a
+  second source of truth and a synchronisation problem without removing the render. Revisit if a
+  section grows past a dozen fields.
+- **ATS scoring on the server, not in a Web Worker.** docs/10 puts it in a worker to protect the
+  frame budget. It is a network call today because the engine already ships behind
+  `POST /ats/score` and the same pure package can be imported into a worker later without
+  changing a single call site. Worth doing when the round trip becomes visible; it is not yet.
+- **Only the newest queued edit per resume is kept.** Autosave emits a stream of snapshots of the
+  same document, so replaying every one on reconnect would write a version per keystroke-burst
+  and rebuild exactly the history spam content-hash coalescing exists to prevent.
+- Resizable panes, zoom, and page-break indicators are deferred to slice 1.4, where templates
+  make them meaningful.
 
 ### `1.2` ATS engine `DONE`
 

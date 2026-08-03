@@ -16,6 +16,15 @@ export class ApiError extends Error {
   readonly status: number;
   readonly details?: { field: string; message: string }[];
   readonly requestId?: string;
+  /**
+   * The server's current version on a 409, read from `X-Current-Version`.
+   *
+   * The API deliberately puts this in a header rather than the body: the error
+   * envelope's `details` holds strings only, and the editor needs a number to
+   * decide whether to reload. Parsing it back out of an English sentence would
+   * be exactly the fragility the header exists to avoid.
+   */
+  readonly currentVersion?: number;
 
   constructor(params: {
     code: ApiError['code'];
@@ -23,6 +32,7 @@ export class ApiError extends Error {
     message: string;
     details?: ApiError['details'];
     requestId?: string;
+    currentVersion?: number;
   }) {
     super(params.message);
     this.name = 'ApiError';
@@ -30,6 +40,7 @@ export class ApiError extends Error {
     this.status = params.status;
     this.details = params.details;
     this.requestId = params.requestId;
+    this.currentVersion = params.currentVersion;
   }
 
   /** Retrying a 4xx gets the same 4xx. Only these are worth another attempt. */
@@ -151,12 +162,15 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     if (refreshed) return api<T>(path, { ...options, _retried: true });
   }
 
+  const currentVersion = Number(response.headers.get('X-Current-Version'));
+
   throw new ApiError({
     code,
     status: response.status,
     message: envelope.error?.message ?? 'Something went wrong.',
     details: envelope.error?.details,
     requestId: envelope.meta?.requestId,
+    ...(Number.isInteger(currentVersion) && currentVersion > 0 ? { currentVersion } : {}),
   });
 }
 

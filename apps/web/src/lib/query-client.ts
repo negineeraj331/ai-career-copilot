@@ -46,4 +46,10 @@ export const queryKeys = {
     auditLog: () => [...queryKeys.auth.all, 'audit'] as const,
     providers: () => [...queryKeys.auth.all, 'providers'] as const,
   },
+  resumes: {
+    all: ['resumes'] as const,
+    list: () => [...queryKeys.resumes.all, 'list'] as const,
+    detail: (id: string) => [...queryKeys.resumes.all, 'detail', id] as const,
+    versions: (id: string) => [...queryKeys.resumes.all, 'versions', id] as const,
+  },
 } as const;
