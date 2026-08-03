@@ -53,9 +53,9 @@ people trust it.
 
 ---
 
-## Phase 0 — Foundation `WIP`
+## Phase 0 — Foundation `DONE`
 
-### 0.1 Tooling `WIP`
+### 0.1 Tooling `DONE`
 
 - [x] Dedicated git repository initialised in the project folder
 - [x] `.gitignore` covering env files, build output, uploads
