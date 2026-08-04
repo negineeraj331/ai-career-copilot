@@ -95,3 +95,31 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "dist/index.js"]
+
+# ─── worker ──────────────────────────────────────────────────────────────────
+#
+# Same source and same build as the API, different command — so a deploy cannot
+# ship a worker built from different code than the API enqueuing for it. It is a
+# separate TARGET rather than the same image because PDF export needs Chromium,
+# and ~150 MB of browser has no business in the image that serves HTTP. docs/03
+# says "same image, different command"; this is one image build, two targets,
+# and the deviation is recorded in docs/tracker.md.
+FROM node:22-alpine AS worker
+ENV NODE_ENV=production
+
+# Chromium from the distribution rather than puppeteer's own download: the
+# `puppeteer-core` package is a few hundred kilobytes and drives whatever binary
+# CHROMIUM_PATH names, so no developer or CI run pays for a browser download to
+# build a package that never launches one.
+RUN apk add --no-cache chromium nss freetype harfbuzz ttf-freefont  && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+ENV CHROMIUM_PATH=/usr/bin/chromium-browser
+
+RUN addgroup -S app && adduser -S app -G app
+WORKDIR /app
+COPY --from=build --chown=app:app /prod/api ./
+USER app
+
+# No EXPOSE and no HEALTHCHECK: a queue consumer serves no port, and liveness is
+# whether it is draining the queue — which the orchestrator cannot see through a
+# port probe. Depth and job age are the signals, and they belong in monitoring.
+CMD ["node", "dist/worker.js"]

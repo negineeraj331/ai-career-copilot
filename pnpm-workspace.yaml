@@ -3,10 +3,16 @@ packages:
   - 'packages/*'
 
 # pnpm blocks dependency postinstall scripts by default — a good supply-chain
-# default. These three are explicitly allowed because they genuinely need one:
+# default. These are explicitly allowed because they genuinely need one:
 # Prisma downloads its query engine binaries, esbuild its platform binary.
 # Anything not listed here cannot execute code at install time.
 allowBuilds:
   '@prisma/engines': true
   esbuild: true
   prisma: true
+  # Denied deliberately. It is an optional native accelerator for the msgpack
+  # serialiser BullMQ uses, and msgpackr falls back to a pure-JS path without
+  # it. Compiling C++ at install time on every machine and in CI is a real
+  # supply-chain and reliability cost; the speedup is on a code path that moves
+  # a few hundred bytes per job.
+  msgpackr-extract: false

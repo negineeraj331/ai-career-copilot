@@ -128,6 +128,7 @@ model User {
   mfaCredential      MfaCredential?
   resumes            Resume[]
   resumeVersions     ResumeVersion[]
+  exportJobs         ExportJob[]
 
   @@index([role, deletedAt])
   @@index([deletedAt])
@@ -346,7 +347,8 @@ model Resume {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  versions ResumeVersion[]
+  versions   ResumeVersion[]
+  exportJobs ExportJob[]
 
   // The exact shape of the list query: this user's undeleted resumes, newest
   // touched first. A composite in this order lets Postgres satisfy the filter
@@ -390,4 +392,61 @@ model ResumeVersion {
   @@unique([resumeId, versionNumber])
   @@index([resumeId, createdAt(sort: Desc)])
   @@index([contentHash])
+}
+
+// ─── Exports ──────────────────────────────────────────────────────────────────
+
+enum ExportFormat {
+  PDF
+  DOCX
+  JSON
+  MARKDOWN
+  LATEX
+}
+
+enum ExportStatus {
+  QUEUED
+  RUNNING
+  READY
+  FAILED
+}
+
+// An export is a job, not a response. PDF rendering is CPU- and memory-bound and
+// takes seconds, so holding an HTTP connection open for it would tie up a web
+// process and time out behind any sensible proxy. The row is the durable record
+// the client polls, and it outlives the worker that produced it.
+model ExportJob {
+  id     String @id @default(uuid(7)) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  resumeId String @db.Uuid
+  resume   Resume @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  // Pinned at enqueue time. Without it, editing a resume while an export is
+  // queued produces a file that matches neither what the user saw nor what they
+  // asked for.
+  versionId String @db.Uuid
+
+  format     ExportFormat
+  templateId String
+  status     ExportStatus @default(QUEUED)
+
+  // Key in the exports bucket. Null until the job succeeds.
+  objectKey String?
+  bytes     Int?
+
+  // Safe to show a user. The underlying cause goes to the logs against the
+  // job id, never into this column.
+  error String?
+
+  attempts Int @default(0)
+
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([resumeId])
+  @@index([status])
 }

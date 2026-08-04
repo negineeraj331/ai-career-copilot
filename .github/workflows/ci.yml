@@ -178,6 +178,31 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true # no fix available means no action to take
 
+      # The worker is a separate target because it carries Chromium, which has
+      # no business in the image that serves HTTP. Built here so a change to the
+      # shared build stage cannot break it unnoticed — it is the image that
+      # renders every PDF a user downloads.
+      - name: Build worker image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          target: worker
+          push: false
+          load: true
+          tags: cc-worker:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Scan worker image
+        uses: aquasecurity/trivy-action@2736533278103862a861f4a35ebac3e97854d956 # master
+        with:
+          image-ref: cc-worker:${{ github.sha }}
+          format: table
+          exit-code: '1'
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
       - name: Check image size
         run: |
           # The gate is 800 MB; the TARGET is 300 MB and is currently unmet —

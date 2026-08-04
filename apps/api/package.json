@@ -16,17 +16,24 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma migrate reset --force",
     "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "worker": "tsx watch src/worker.ts",
+    "start:worker": "node dist/worker.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1101.0",
+    "@aws-sdk/s3-request-presigner": "^3.1101.0",
     "@cc/ats": "workspace:*",
+    "@cc/exporters": "workspace:*",
     "@cc/shared": "workspace:*",
     "@node-rs/argon2": "^2.0.2",
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "@prisma/client-runtime-utils": "7.9.1",
+    "bullmq": "^6.0.6",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
+    "docx": "^9.7.1",
     "express": "^5.2.1",
     "helmet": "^8.3.0",
     "ioredis": "^6.0.0",
@@ -35,6 +42,7 @@
     "otplib": "^13.4.1",
     "pg": "^8.22.0",
     "pino": "^10.3.1",
+    "puppeteer-core": "^25.4.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
