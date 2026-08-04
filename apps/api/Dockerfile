@@ -5,7 +5,7 @@
 # the shared packages are in context.
 
 # ─── deps ────────────────────────────────────────────────────────────────────
-FROM node:22-alpine AS deps
+FROM node:26-alpine AS deps
 RUN corepack enable
 WORKDIR /app
 
@@ -57,7 +57,7 @@ RUN pnpm --filter "./packages/*" build \
 RUN CI=true pnpm deploy --filter=@cc/api --prod --legacy --ignore-scripts /prod/api
 
 # ─── runtime ─────────────────────────────────────────────────────────────────
-FROM node:22-alpine AS runtime
+FROM node:26-alpine AS runtime
 ENV NODE_ENV=production
 
 # Remove npm, which the node base image ships and this container never uses —
@@ -104,7 +104,7 @@ CMD ["node", "dist/index.js"]
 # and ~150 MB of browser has no business in the image that serves HTTP. docs/03
 # says "same image, different command"; this is one image build, two targets,
 # and the deviation is recorded in docs/tracker.md.
-FROM node:22-alpine AS worker
+FROM node:26-alpine AS worker
 ENV NODE_ENV=production
 
 # Chromium from the distribution rather than puppeteer's own download: the
