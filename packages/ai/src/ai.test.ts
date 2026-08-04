@@ -6,6 +6,7 @@ import {
   PROMPTS,
   cacheKeyFor,
   costMicros,
+  jsonSchemaFor,
   promptFor,
 } from './index.js';
 import type { AiRequest } from './types.js';
@@ -125,6 +126,45 @@ describe('mock provider', () => {
   });
 });
 
+describe('union types', () => {
+  it('handles a nullable field declared as a type union', async () => {
+    // The real jd.extract schema declares `minYearsExperience` as
+    // `type: ['number', 'null']`, and the mock rejected it outright — loudly,
+    // naming the construct, which is how the gap was found rather than guessed.
+    const schema = z.object({ years: z.number().nullable() });
+    const result = await new MockProvider().complete({
+      ...request(),
+      schema,
+      jsonSchema: {
+        type: 'object',
+        properties: { years: { type: ['number', 'null'] } },
+        required: ['years'],
+      },
+    } as unknown as AiRequest<{ years: number | null }>);
+    expect(() => schema.parse(result.value)).not.toThrow();
+  });
+
+  it('exercises both branches of a nullable field across inputs', async () => {
+    const schema = z.object({ years: z.number().nullable() });
+    const seen = new Set<string>();
+    for (let i = 0; i < 25; i += 1) {
+      const result = await new MockProvider().complete({
+        ...request(`input-${String(i)}`),
+        schema,
+        jsonSchema: {
+          type: 'object',
+          properties: { years: { type: ['number', 'null'] } },
+          required: ['years'],
+        },
+      } as unknown as AiRequest<{ years: number | null }>);
+      seen.add(result.value.years === null ? 'null' : 'number');
+    }
+    // A mock that always took the non-null branch would leave every "what if
+    // this is missing" path in the product permanently untested.
+    expect(seen).toEqual(new Set(['null', 'number']));
+  });
+});
+
 describe('error taxonomy', () => {
   it.each([
     ['rate_limit', true],
@@ -233,6 +273,70 @@ describe('cost', () => {
     const totalDollars = (extract + recommend + optimise) / 1_000_000;
     expect(totalDollars).toBeGreaterThan(0.05);
     expect(totalDollars).toBeLessThan(0.09);
+  });
+});
+
+describe('jsonSchemaFor', () => {
+  /**
+   * This exists because two hand-maintained schemas drifted twice within an
+   * hour — an invented enum value, then missing numeric bounds — and both would
+   * have surfaced as responses that failed validation after being paid for.
+   */
+  it('carries the constraints Zod enforces', () => {
+    const schema = z.object({ years: z.number().min(0).max(50) });
+    const generated = jsonSchemaFor(schema);
+    const years = (generated.properties as Record<string, Record<string, unknown>>).years;
+    // Omitting these is exactly the drift that let the model return 60 years.
+    expect(years?.minimum).toBe(0);
+    expect(years?.maximum).toBe(50);
+  });
+
+  it('carries every enum member, and only those', () => {
+    const schema = z.object({ level: z.enum(['NONE', 'DIPLOMA', 'DOCTORATE']) });
+    const generated = jsonSchemaFor(schema);
+    const level = (generated.properties as Record<string, Record<string, unknown>>).level;
+    expect(level?.enum).toEqual(['NONE', 'DIPLOMA', 'DOCTORATE']);
+  });
+
+  it('expresses a nullable field as a type union rather than anyOf', () => {
+    const schema = z.object({ years: z.number().min(0).max(50).nullable() });
+    const years = (jsonSchemaFor(schema).properties as Record<string, Record<string, unknown>>)
+      .years;
+    expect(years?.type).toEqual(['number', 'null']);
+    // And keeps the sibling constraints the anyOf branch carried.
+    expect(years?.maximum).toBe(50);
+  });
+
+  it('forbids properties the schema did not ask for', () => {
+    // An extra key is a model inventing structure, and providers reject an
+    // object schema that permits one.
+    const generated = jsonSchemaFor(z.object({ a: z.string() }));
+    expect(generated.additionalProperties).toBe(false);
+  });
+
+  it('strips draft metadata the provider has no use for', () => {
+    expect(jsonSchemaFor(z.object({ a: z.string() }))).not.toHaveProperty('$schema');
+  });
+
+  it('produces something the mock can satisfy for every seed', async () => {
+    // The end-to-end guarantee: generated schema in, valid value out, for any
+    // input. This is what the hand-written version failed at.
+    const schema = z.object({
+      title: z.string().max(160),
+      level: z.enum(['A', 'B', 'C']),
+      years: z.number().min(0).max(50).nullable(),
+      skills: z.array(z.object({ name: z.string(), weight: z.number().min(0).max(1) })),
+    });
+    const jsonSchema = jsonSchemaFor(schema);
+
+    for (let i = 0; i < 20; i += 1) {
+      const result = await new MockProvider().complete({
+        ...request(`seed-${String(i)}`),
+        schema,
+        jsonSchema,
+      } as unknown as AiRequest<z.infer<typeof schema>>);
+      expect(() => schema.parse(result.value)).not.toThrow();
+    }
   });
 });
 

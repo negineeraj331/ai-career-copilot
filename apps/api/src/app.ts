@@ -7,7 +7,9 @@ import { limiters } from './core/security/rate-limit.js';
 import { requestContext } from './core/security/request-id.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { atsRoutes } from './modules/ats/ats.routes.js';
+import { analysisRoutes } from './modules/analysis/analysis.routes.js';
 import { exportRoutes } from './modules/export/export.routes.js';
+import { jobRoutes } from './modules/job/job.routes.js';
 import { resumeRoutes } from './modules/resume/resume.routes.js';
 import { healthRoutes } from './modules/health/health.routes.js';
 
@@ -59,6 +61,8 @@ export function createApp(): Express {
   app.use('/api/v1/resumes', resumeRoutes());
   app.use('/api/v1/ats', atsRoutes());
   app.use('/api/v1/exports', exportRoutes());
+  app.use('/api/v1/jobs', jobRoutes());
+  app.use('/api/v1/analysis', analysisRoutes());
 
   // Further feature routers mount here as slices land.
 

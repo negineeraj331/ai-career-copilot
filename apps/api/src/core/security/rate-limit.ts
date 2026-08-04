@@ -138,6 +138,26 @@ export const limiters = {
   public: (): RequestHandler =>
     rateLimit({ name: 'public', points: 30, durationSeconds: 60, failureMode: 'open' }),
 
+  /**
+   * AI endpoints: 20/min per user (docs/06 §1.6).
+   *
+   * This sits *in front of* the monthly quota rather than instead of it. Quota
+   * bounds the month; this bounds the minute. Without it, a loop could spend an
+   * entire month's allowance in a second — the quota would correctly refuse the
+   * eleventh call, having already paid for the first ten in the same breath.
+   *
+   * Fails open: an AI feature is not worth taking down over a Redis blip, and
+   * the monthly quota is still enforced underneath.
+   */
+  ai: (): RequestHandler =>
+    rateLimit({
+      name: 'ai',
+      points: 20,
+      durationSeconds: 60,
+      failureMode: 'open',
+      keyFor: (req) => (req as { actor?: { id: string } }).actor?.id ?? req.ip ?? 'unknown',
+    }),
+
   /** Authenticated traffic: 300/min per user, falling back to IP. */
   authenticated: (): RequestHandler =>
     rateLimit({

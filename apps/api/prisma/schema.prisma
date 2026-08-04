@@ -129,6 +129,8 @@ model User {
   resumes            Resume[]
   resumeVersions     ResumeVersion[]
   exportJobs         ExportJob[]
+  jobDescriptions    JobDescription[]
+  analyses           Analysis[]
 
   @@index([role, deletedAt])
   @@index([deletedAt])
@@ -389,6 +391,8 @@ model ResumeVersion {
 
   createdAt DateTime @default(now())
 
+  analyses Analysis[]
+
   @@unique([resumeId, versionNumber])
   @@index([resumeId, createdAt(sort: Desc)])
   @@index([contentHash])
@@ -492,4 +496,92 @@ model AiUsageLog {
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([feature, createdAt(sort: Desc)])
+}
+
+// ─── Job descriptions and analysis ────────────────────────────────────────────
+
+model JobDescription {
+  id     String @id @default(uuid(7)) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title     String
+  company   String?
+  rawText   String
+  sourceUrl String?
+
+  // Extracted requirements, conforming to parsedJobDescriptionSchema. Null
+  // until the AI extraction has run.
+  parsed   Json?
+  parsedAt DateTime?
+
+  // SHA-256 of the raw text. The same posting pasted twice reuses the existing
+  // parse and its embeddings rather than paying for extraction again — the
+  // single biggest lever on the per-user AI budget (docs/11 §8).
+  contentHash String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  analyses Analysis[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([contentHash])
+}
+
+model Analysis {
+  id     String @id @default(uuid(7)) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Pinned to a snapshot, never to a mutable resume: an analysis of "the
+  // resume" would silently describe something the user has since changed.
+  resumeVersionId String        @db.Uuid
+  resumeVersion   ResumeVersion @relation(fields: [resumeVersionId], references: [id], onDelete: Cascade)
+
+  jobDescriptionId String?         @db.Uuid
+  jobDescription   JobDescription? @relation(fields: [jobDescriptionId], references: [id], onDelete: SetNull)
+
+  atsScore   Int
+  matchScore Int?
+
+  breakdown       Json?
+  missingSkills   Json
+  recommendations Json
+
+  // Which rubric produced this. Without it, a scoring change silently rewrites
+  // the meaning of every historical number and a user's "progress" is fiction.
+  rubricVersion Int
+
+  // hash(resumeVersion + jd + rubricVersion). Re-running an unchanged analysis
+  // returns the stored row instead of paying for the AI calls again.
+  cacheKey String @unique
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([resumeVersionId])
+}
+
+// Embeddings, keyed on content hash and shared across users.
+//
+// A vector is a pure function of its text and the model that produced it, so two
+// users pasting the same job description compute it once, ever. That is what
+// makes the embedding cache permanent rather than expiring: there is nothing to
+// invalidate short of changing the model, which the key already accounts for.
+model Embedding {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  contentHash String
+  model       String
+  dimensions  Int
+
+  // The column is added by migration SQL: Prisma has no native vector type, so
+  // it is declared Unsupported here and queried through raw SQL where cosine
+  // distance is needed.
+  vector Unsupported("vector")?
+
+  createdAt DateTime @default(now())
+
+  @@unique([contentHash, model])
 }
