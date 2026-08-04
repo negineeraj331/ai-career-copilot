@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Express } from 'express';
 import { randomUUID } from 'node:crypto';
+import { TEMPLATES } from '@cc/shared';
 import { createApp } from '../src/app.js';
 import { closeDatabase, prisma } from '../src/core/db/prisma.js';
 import { closeRedis } from '../src/core/redis/client.js';
@@ -450,6 +451,21 @@ describe('validation', () => {
     const c = await signIn(OWNER);
     const id = await createResume(c);
     await c.agent.patch(`${RESUMES}/${id}`).set('X-CSRF-Token', c.csrf).send({}).expect(400);
+  });
+
+  it('rejects an unknown templateId rather than storing a typo', async () => {
+    const c = await signIn(OWNER);
+    // The catalogue lives in @cc/shared, so the API can only accept templates
+    // the deployed client is actually able to draw. A free-text field would let
+    // a typo persist and surface later as a resume that renders as nothing.
+    await post(c, RESUMES, { title: 'x', templateId: 'not-a-real-template' }).expect(400);
+  });
+
+  it('accepts every template the catalogue advertises', async () => {
+    const c = await signIn(OWNER);
+    for (const template of TEMPLATES) {
+      await post(c, RESUMES, { title: template.name, templateId: template.id }).expect(201);
+    }
   });
 
   it('rejects a non-uuid id before it reaches the database', async () => {

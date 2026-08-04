@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useParams, Link } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ResumeDocument, SectionKey } from '@cc/shared';
 import { queryKeys } from '../../../lib/query-client.js';
 import { ErrorState, Skeleton } from '../../../components/feedback/States.js';
@@ -19,6 +19,7 @@ import { SectionReorder } from '../components/SectionReorder.js';
 import { PreviewPane } from '../components/PreviewPane.js';
 import { ScorePanel } from '../components/ScorePanel.js';
 import { SaveIndicator } from '../components/SaveIndicator.js';
+import { TemplatePicker } from '../components/TemplatePicker.js';
 
 /**
  * Split-screen editor (slice 1.3).
@@ -30,6 +31,7 @@ import { SaveIndicator } from '../components/SaveIndicator.js';
  */
 export function EditorPage(): ReactNode {
   const { id = '' } = useParams();
+  const queryClient = useQueryClient();
   const [doc, setDoc] = useState<ResumeDocument | null>(null);
   const [activeSection, setActiveSection] = useState<SectionKey>('summary');
   const [recovered, setRecovered] = useState(false);
@@ -42,6 +44,21 @@ export function EditorPage(): ReactNode {
 
   const version = query.data?.currentVersion ?? 1;
   const autosave = useAutosave(id, version);
+
+  /**
+   * A template change is metadata, not content, so it saves immediately rather
+   * than joining the debounced content queue. It also does not carry
+   * `expectedVersion`: switching templates cannot conflict with someone else's
+   * text edit, and refusing it on that basis would be a conflict the user has
+   * no way to resolve.
+   */
+  const templateMutation = useMutation({
+    mutationFn: (templateId: string) => resumeApi.update(id, { templateId }),
+    onSuccess: ({ resume }) => {
+      queryClient.setQueryData(queryKeys.resumes.detail(id), { resume });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.resumes.list() });
+    },
+  });
 
   // Seed local state once the resume loads. A queued offline edit wins over the
   // server copy: it is strictly newer, and silently discarding it is the exact
@@ -86,15 +103,10 @@ export function EditorPage(): ReactNode {
 
   const sections = useMemo(() => (doc ? orderedSections(doc) : []), [doc]);
 
-  if (query.isPending || !doc) {
-    return (
-      <div className="flex flex-col gap-4 p-8">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-96 w-full" />
-      </div>
-    );
-  }
-
+  // Errors are checked BEFORE the loading guard. With the order reversed, a
+  // failed load left `doc` null forever and the page showed a skeleton that
+  // never resolved — the error branch below was unreachable, and the user got a
+  // permanent spinner instead of a retry.
   if (query.isError) {
     return (
       <ErrorState
@@ -102,6 +114,15 @@ export function EditorPage(): ReactNode {
         message={query.error.message}
         onRetry={() => void query.refetch()}
       />
+    );
+  }
+
+  if (query.isPending || !doc) {
+    return (
+      <div className="flex flex-col gap-4 p-8">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-96 w-full" />
+      </div>
     );
   }
 
@@ -164,6 +185,12 @@ export function EditorPage(): ReactNode {
             }}
           />
           <ScorePanel score={scoreQuery.data} isStale={scoreQuery.isFetching} />
+          <TemplatePicker
+            value={templateMutation.variables ?? query.data.templateId}
+            onChange={(templateId) => {
+              templateMutation.mutate(templateId);
+            }}
+          />
         </aside>
 
         <section aria-label={`Edit ${SECTION_LABELS[activeSection] ?? activeSection}`}>
@@ -178,21 +205,21 @@ export function EditorPage(): ReactNode {
           />
         </section>
 
-        <section aria-label="Preview" className="hidden lg:block">
-          <div className="sticky top-24">
-            <PreviewPane doc={doc} />
+        {/* One preview, not one per breakpoint.
+            An earlier version rendered a desktop copy and a mobile copy and let
+            CSS hide whichever did not apply. Both were still in the accessibility
+            tree, so a screen reader announced the entire resume twice. The grid
+            already collapses this column below `lg`, which is all the responsive
+            behaviour it needed. */}
+        <section aria-label="Preview" className="overflow-x-auto">
+          <div className="lg:sticky lg:top-24">
+            <PreviewPane
+              doc={doc}
+              templateId={templateMutation.variables ?? query.data.templateId}
+            />
           </div>
         </section>
       </div>
-
-      {/* Below lg the preview is a separate view rather than a squeezed column:
-          a resume rendered into a phone-width sliver is not a preview. */}
-      <details className="border-t border-[var(--border-hairline)] p-4 lg:hidden">
-        <summary className="cursor-pointer text-sm font-medium">Show preview</summary>
-        <div className="mt-4 overflow-x-auto">
-          <PreviewPane doc={doc} />
-        </div>
-      </details>
     </div>
   );
 }

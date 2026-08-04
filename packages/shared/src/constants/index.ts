@@ -61,3 +61,5 @@ export function scoreBand(score: number): ScoreBand {
   if (score >= SCORE_BANDS.SERIOUS.min) return 'SERIOUS';
   return 'CRITICAL';
 }
+
+export * from './templates.js';
