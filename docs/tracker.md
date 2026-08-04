@@ -437,12 +437,30 @@ still owed.
   BullMQ's serialiser with a pure-JS fallback; compiling C++ at install time on every machine and
   in CI is a real supply-chain cost for a speedup on a path that moves a few hundred bytes.
 
-**One unexplained test failure.** During a single full-gate run, 8 API tests failed; the suite
-passed on three immediate re-runs and through a soak afterwards. The most likely cause is a
-worker container that had been running against the same Redis and Postgres moments earlier,
-consuming jobs the tests had enqueued — but the ordering says it had already been removed, so
-this is recorded as unexplained rather than diagnosed. It is the same lesson as slice 1.2: shared
-infrastructure plus a second consumer produces failures that look like application bugs.
+**A serious pipeline bug, caught by the size gate.** The worker stage was appended to the end of
+the Dockerfile, and `docker build` with no `--target` builds the **last** stage — so CI had been
+tagging the 1.84 GB worker image, Chromium and all, as `cc-api`, and the deploy workflow would
+have pushed a browser to production. Proven locally: no target gives 1.84 GB, `--target runtime`
+gives 804 MB. Every build in `ci.yml` and `deploy.yml` now names its target explicitly.
+
+The 800 MB regression gate is what caught it. A gate set where it can actually fire earned its
+keep here: without it the only symptom would have been a production image that was slow to pull
+and shipped a browser nobody meant to ship.
+
+**The "unexplained" 8 test failures were explained: the Docker daemon.** OrbStack stopped
+mid-session. With Postgres, Redis, and MinIO gone, 162 API tests fail; catch it at the moment it
+is half-down and a handful fail instead. Restarting the daemon and `docker compose up -d` put all
+423 tests back to green. Recorded because the first instinct was to hunt for a race in the code,
+and the answer was that the infrastructure under the test had disappeared — the same shape of
+mistake as slice 1.2, where the interference was also environmental rather than logical.
+
+**A coverage gate was set without measuring, which is the thing this tracker keeps criticising.**
+`packages/exporters` inherited an 80% branch threshold copied from `@cc/ats`; the package measured
+68.98% and CI failed. The bar was not lowered. The uncovered branches were almost all `x ? … : ''`
+guards on optional schema fields, so the fix was a test rendering a document with every optional
+field absent — which walks both sides of each guard and is worth more than the number, because a
+half-finished resume is exactly what someone has when they first hit export. Branches went to
+89.83%.
 
 ### `1.4` Templates `DONE`
 
