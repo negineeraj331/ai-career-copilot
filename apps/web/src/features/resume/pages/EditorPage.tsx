@@ -20,6 +20,7 @@ import { PreviewPane } from '../components/PreviewPane.js';
 import { ScorePanel } from '../components/ScorePanel.js';
 import { SaveIndicator } from '../components/SaveIndicator.js';
 import { TemplatePicker } from '../components/TemplatePicker.js';
+import { AiPanel } from '../components/AiPanel.js';
 
 /**
  * Split-screen editor (slice 1.3).
@@ -185,6 +186,22 @@ export function EditorPage(): ReactNode {
             }}
           />
           <ScorePanel score={scoreQuery.data} isStale={scoreQuery.isFetching} />
+          <AiPanel
+            doc={doc}
+            targetRole={query.data.targetRole ?? undefined}
+            onApply={(bulletId, text) => {
+              // Applied through the same onChange as a manual edit, so it goes
+              // through autosave, the live score, and the placeholder guard —
+              // an accepted suggestion is not a privileged write.
+              onChange({
+                ...doc,
+                experience: doc.experience.map((role) => ({
+                  ...role,
+                  bullets: role.bullets.map((b) => (b.id === bulletId ? { ...b, text } : b)),
+                })),
+              });
+            }}
+          />
           <TemplatePicker
             value={templateMutation.variables ?? query.data.templateId}
             onChange={(templateId) => {

@@ -1,7 +1,7 @@
 # Build Tracker — Career Copilot
 
 **Last updated:** 2026-08-04 · Owner: Neeraj Negi
-**Current phase:** Phase 1 — Core loop · slices 1.1–1.7 done. Next: slice 1.8 (AI writing)
+**Current phase:** Phase 1 — Core loop · slices 1.1–1.8 done. Next: slice 1.9 (versions), the last of Phase 1
 
 This is the live status of the build. The [roadmap](./17-feature-roadmap.md) says what we
 intend to build and in what order; this file says what actually exists right now. Update it in
@@ -18,12 +18,12 @@ people trust it.
 | ------------------------- | ----------- | ------ |
 | Documentation             | 19 / 19     | `DONE` |
 | Phase 0 — Foundation      | 8 / 8       | `DONE` |
-| Phase 1 — Core loop       | 7 / 9       | `WIP`  |
+| Phase 1 — Core loop       | 8 / 9       | `WIP`  |
 | Phase 2 — Retention       | 0 / 7       | `TODO` |
 | Phase 3 — Differentiation | 0 / 7       | `TODO` |
 | Phase 4 — Scale           | 0 / 8       | `TODO` |
 
-**Deployed:** nothing yet. **Tests:** 547 passing. **Coverage:** 91.7% API lines, 96.7% `@cc/ats`. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
+**Deployed:** nothing yet. **Tests:** 581 passing. **Coverage:** 91.7% API lines, 96.7% `@cc/ats`. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
 
 ---
 
@@ -384,7 +384,44 @@ Still open: a hosting target — open question 5, which slice 0.8 was meant to a
 
 `1.1` Resume model `DONE` · `1.2` ATS engine `DONE` · `1.3` Editor `DONE` ·
 `1.4` Templates `DONE` · `1.5` Export `DONE` · `1.6` AI layer `DONE` ·
-`1.7` JD analysis `DONE` · `1.8` AI writing · `1.9` Versions
+`1.7` JD analysis `DONE` · `1.8` AI writing `DONE` · `1.9` Versions
+
+### `1.8` AI writing `DONE`
+
+- [x] `POST /ai/bullet/optimize`, `/bullet/generate`, `/skills/suggest`, `GET /ai/usage`
+- [x] Every write-capable feature returns a **proposal**, never an applied edit
+- [x] Placeholder confirmation in the UI, and the same rule enforced on the server
+- [x] `AiPanel` and `ProposalCard` in the editor, with accept / edit / discard
+- [x] 34 new tests
+
+**Verified:** 581 tests pass · lint, format, typecheck, build, bundle, audit clean · the
+placeholder guard mutation-tested — removing it makes exactly the two guard tests fail.
+
+**The placeholder guarantee moved from the client to both.** docs/11 §5 says the client disables
+Accept until every placeholder is confirmed, and that is the right experience. It is the wrong
+place for the guarantee: a rule that lives only in the UI holds until someone writes a script, a
+second client, or a bug. The server now refuses to store any bullet or summary containing an
+unfilled `[X]`, and names the field and the token so the UI can point at it. The failure this
+prevents is an application reaching an employer reading "improved latency by [X]%".
+
+The detection is deliberately blunt — a bracketed token that is short and has no lowercase prose
+— and tested in **both** directions. `[sic]`, `[2020-2024]`, and `[note: revised]` are things
+people write, and a guard that fires on ordinary prose is one people learn to work around.
+
+**The model's self-reported placeholder list is verified, not trusted.** `placeholders` is what
+the whole gate hangs off, and a model that writes "[X]% faster" then reports an empty list would
+walk an unfilled figure straight through. The response text is re-scanned and the union is used:
+trust the list, but check the text.
+
+**Accepted suggestions are not privileged writes.** Applying a proposal goes through the same
+`onChange` as typing, so it hits autosave, the live score, and the server-side placeholder guard.
+A separate "apply AI edit" path would be a second way in, and the second way is always the one
+that skips a check.
+
+**A test that would have passed for the wrong reason.** `userEvent.type` reads `[N]` as a key
+descriptor, so typing a placeholder into the textarea silently dropped the brackets — the gate
+looked satisfied because the placeholder had never been entered. Switched to `paste`, with the
+reason in a comment, because the next person will hit it too.
 
 ### `1.7` JD analysis `DONE`
 
