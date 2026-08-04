@@ -1,7 +1,7 @@
 # Build Tracker — Career Copilot
 
 **Last updated:** 2026-08-04 · Owner: Neeraj Negi
-**Current phase:** Phase 1 — Core loop · slices 1.1–1.4 done. Next: slice 1.5 (export)
+**Current phase:** Phase 1 — Core loop · slices 1.1–1.5 done. Next: slice 1.6 (AI layer)
 
 This is the live status of the build. The [roadmap](./17-feature-roadmap.md) says what we
 intend to build and in what order; this file says what actually exists right now. Update it in
@@ -18,12 +18,12 @@ people trust it.
 | ------------------------- | ----------- | ------ |
 | Documentation             | 19 / 19     | `DONE` |
 | Phase 0 — Foundation      | 8 / 8       | `DONE` |
-| Phase 1 — Core loop       | 4 / 9       | `WIP`  |
+| Phase 1 — Core loop       | 5 / 9       | `WIP`  |
 | Phase 2 — Retention       | 0 / 7       | `TODO` |
 | Phase 3 — Differentiation | 0 / 7       | `TODO` |
 | Phase 4 — Scale           | 0 / 8       | `TODO` |
 
-**Deployed:** nothing yet. **Tests:** 357 passing. **Coverage:** 91.7% API lines, 96.7% `@cc/ats`. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
+**Deployed:** nothing yet. **Tests:** 416 passing. **Coverage:** 91.7% API lines, 96.7% `@cc/ats`. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
 
 ---
 
@@ -383,8 +383,66 @@ Still open: a hosting target — open question 5, which slice 0.8 was meant to a
 ## Phase 1 — Core loop `WIP`
 
 `1.1` Resume model `DONE` · `1.2` ATS engine `DONE` · `1.3` Editor `DONE` ·
-`1.4` Templates `DONE` · `1.5` Export · `1.6` AI layer · `1.7` JD analysis · `1.8` AI writing ·
-`1.9` Versions
+`1.4` Templates `DONE` · `1.5` Export `DONE` · `1.6` AI layer · `1.7` JD analysis ·
+`1.8` AI writing · `1.9` Versions
+
+### `1.5` Export `DONE`
+
+- [x] `@cc/exporters` — Markdown, JSON, LaTeX, and print HTML as pure functions
+- [x] DOCX built from the data model; PDF via headless Chromium
+- [x] BullMQ queue, worker entrypoint, and a separate worker image target
+- [x] S3-compatible object storage, pre-signed download URLs
+- [x] `POST /resumes/:id/export` → 202 + job, `GET /exports/:jobId` → status
+- [x] The exported version is pinned at enqueue time
+- [x] 57 new tests
+
+**Verified end to end, not just unit-tested.** A job was enqueued from the host, picked up by the
+worker running in its own container, rendered through a real Chromium, uploaded to MinIO, marked
+`READY`, and downloaded through a pre-signed URL. Three templates were rendered to actual PDFs
+and inspected: valid `%PDF-` headers, one page each, and — the check that matters for this
+product — **five `ToUnicode` CMaps and embedded subset fonts in every file**, which is what makes
+the text machine-extractable. A resume PDF an ATS cannot read scores zero, and that failure is
+completely silent. Georgia appears in the serif template and Helvetica Neue in the sans ones, so
+the template styles genuinely apply in the headless render rather than falling back.
+
+_Caveat on that check:_ a naive glyph extractor did not recover readable words, because Chrome
+subsets fonts and the string literals are glyph indices. The `ToUnicode` presence is the real
+determinant and is what was asserted; a full round-trip extraction with a proper PDF library is
+still owed.
+
+**Two bugs found by tooling rather than by thinking.**
+
+- Lint caught `' $\cdot$ '` written as a normal string literal, so JavaScript collapsed `\c` to
+  `c` and **every LaTeX export typeset the literal word "cdot"** between the contact details.
+  Now a regression test.
+- The first `escapeLatex` chained `.replace()` calls, and the comment confidently claimed that
+  escaping backslashes first avoided double-escaping. It does not: the chain re-scans its own
+  output, so `\textbackslash{}` had the braces it had just inserted escaped, producing literal
+  text instead of a backslash. Rewritten as one pass with a lookup table, which cannot have that
+  bug because nothing it emits is examined again.
+
+**Deviations, recorded rather than silent:**
+
+- **The worker is a separate image target, not the same image.** docs/03 says "same image,
+  different command". It is one build with two targets: same source, same build stage, but
+  ~400 MB of Chromium has no business in the image that serves HTTP. The worker image is
+  **1.84 GB** — Prisma's bloat plus a browser — which is recorded as debt alongside the API
+  image's 499 MB, not hidden.
+- **The print HTML is a second implementation of the templates**, not the React components
+  reused. The worker must not import `apps/web` — that would drag React and Tailwind's build
+  into a headless process to produce a string. The cost is real: the preview and the PDF can
+  drift. What limits it is that both read the same document and the same section-ordering
+  helper. Visual parity is still checked by eye.
+- **`msgpackr-extract` is denied in `allowBuilds`.** It is an optional native accelerator for
+  BullMQ's serialiser with a pure-JS fallback; compiling C++ at install time on every machine and
+  in CI is a real supply-chain cost for a speedup on a path that moves a few hundred bytes.
+
+**One unexplained test failure.** During a single full-gate run, 8 API tests failed; the suite
+passed on three immediate re-runs and through a soak afterwards. The most likely cause is a
+worker container that had been running against the same Redis and Postgres moments earlier,
+consuming jobs the tests had enqueued — but the ordering says it had already been removed, so
+this is recorded as unexplained rather than diagnosed. It is the same lesson as slice 1.2: shared
+infrastructure plus a second consumer produces failures that look like application bugs.
 
 ### `1.4` Templates `DONE`
 

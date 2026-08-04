@@ -8,6 +8,7 @@ import {
 } from '@cc/shared';
 import { validate } from '../../core/http/validate.js';
 import { authenticate } from '../../middleware/authenticate.js';
+import { resumeExportRoutes } from '../export/export.routes.js';
 import * as controller from './resume.controller.js';
 
 const idParam = z.object({ id: uuidSchema });
@@ -29,6 +30,10 @@ export function resumeRoutes(): Router {
   router.patch('/:id', validate({ params: idParam, body: updateResumeSchema }), controller.update);
   router.delete('/:id', validate({ params: idParam }), controller.remove);
   router.post('/:id/duplicate', validate({ params: idParam }), controller.duplicate);
+
+  // Nested rather than a flat path, so ownership and the :id param are
+  // validated once for both the resume and its exports.
+  router.use('/:id/export', validate({ params: idParam }), resumeExportRoutes());
 
   router.get('/:id/versions', validate({ params: idParam }), controller.versions);
   router.get('/:id/versions/:versionId', validate({ params: versionParams }), controller.version);
