@@ -396,6 +396,13 @@ Still open: a hosting target — open question 5, which slice 0.8 was meant to a
 - [x] The exported version is pinned at enqueue time
 - [x] 57 new tests
 
+**CI needed object storage.** Seven export tests failed at `putObject` because the test job ran
+Postgres and Redis but nothing S3-compatible. MinIO now runs as a step rather than a service
+container — a service cannot override the image's command, and the official MinIO image needs
+`server /data` to start. Mocking the S3 client would have been faster and worth much less: these
+tests write real objects and read back real pre-signed URLs, and a mock only asserts that we call
+the SDK the way we call it.
+
 **Verified end to end, not just unit-tested.** A job was enqueued from the host, picked up by the
 worker running in its own container, rendered through a real Chromium, uploaded to MinIO, marked
 `READY`, and downloaded through a pre-signed URL. Three templates were rendered to actual PDFs
@@ -426,8 +433,9 @@ still owed.
 - **The worker is a separate image target, not the same image.** docs/03 says "same image,
   different command". It is one build with two targets: same source, same build stage, but
   ~400 MB of Chromium has no business in the image that serves HTTP. The worker image is
-  **1.84 GB** — Prisma's bloat plus a browser — which is recorded as debt alongside the API
-  image's 499 MB, not hidden.
+  **1.84 GB** — Prisma's bloat plus a browser — recorded as debt, not hidden. The API image is
+  **550 MB** on the CI runner, up 51 MB from this slice's dependencies (`@aws-sdk/client-s3`,
+  `bullmq`, `docx`, `puppeteer-core`) and still inside the 800 MB gate.
 - **The print HTML is a second implementation of the templates**, not the React components
   reused. The worker must not import `apps/web` — that would drag React and Tailwind's build
   into a headless process to produce a string. The cost is real: the preview and the PDF can
