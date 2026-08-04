@@ -1,7 +1,7 @@
 # Build Tracker — Career Copilot
 
 **Last updated:** 2026-08-04 · Owner: Neeraj Negi
-**Current phase:** Phase 1 — Core loop · slices 1.1–1.3 done. Next: slice 1.4 (templates)
+**Current phase:** Phase 1 — Core loop · slices 1.1–1.4 done. Next: slice 1.5 (export)
 
 This is the live status of the build. The [roadmap](./17-feature-roadmap.md) says what we
 intend to build and in what order; this file says what actually exists right now. Update it in
@@ -18,12 +18,12 @@ people trust it.
 | ------------------------- | ----------- | ------ |
 | Documentation             | 19 / 19     | `DONE` |
 | Phase 0 — Foundation      | 8 / 8       | `DONE` |
-| Phase 1 — Core loop       | 3 / 9       | `WIP`  |
+| Phase 1 — Core loop       | 4 / 9       | `WIP`  |
 | Phase 2 — Retention       | 0 / 7       | `TODO` |
 | Phase 3 — Differentiation | 0 / 7       | `TODO` |
 | Phase 4 — Scale           | 0 / 8       | `TODO` |
 
-**Deployed:** nothing yet. **Tests:** 317 passing. **Coverage:** 91.7% API lines, 96.7% `@cc/ats`. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
+**Deployed:** nothing yet. **Tests:** 357 passing. **Coverage:** 91.7% API lines, 96.7% `@cc/ats`. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
 
 ---
 
@@ -382,8 +382,50 @@ Still open: a hosting target — open question 5, which slice 0.8 was meant to a
 
 ## Phase 1 — Core loop `WIP`
 
-`1.1` Resume model `DONE` · `1.2` ATS engine `DONE` · `1.3` Editor `DONE` · `1.4` Templates ·
-`1.5` Export · `1.6` AI layer · `1.7` JD analysis · `1.8` AI writing · `1.9` Versions
+`1.1` Resume model `DONE` · `1.2` ATS engine `DONE` · `1.3` Editor `DONE` ·
+`1.4` Templates `DONE` · `1.5` Export · `1.6` AI layer · `1.7` JD analysis · `1.8` AI writing ·
+`1.9` Versions
+
+### `1.4` Templates `DONE`
+
+- [x] Renderer contract: a template is a pure function of `(doc, sections)`
+- [x] Six launch templates — Minimal, Classic, Compact, Technical, Academic, Two column
+- [x] `atsSafe` flags, with the warning shown beside the choice rather than behind a tooltip
+- [x] Template picker in the editor; switching saves immediately and re-renders the preview
+- [x] `templateId` validated against the catalogue on both sides
+- [x] 42 new tests, including the first render of the composed editor page
+
+**Verified:** lint, format, typecheck, build clean · 357 tests pass · initial bundle unchanged at
+95.1 KB, templates riding in the lazy-loaded editor chunk.
+
+**The gap flagged at the end of 1.3 is closed.** Every piece of the editor was unit-tested and
+nothing had ever rendered the page they add up to, so a broken import or a bad prop would have
+shipped green. `EditorPage.test.tsx` now drives the real form, preview, score, and picker against
+a mocked API — and it immediately found two bugs that every unit test had passed straight over:
+
+- **The error state was unreachable.** `if (query.isPending || !doc)` came first, so a failed load
+  left `doc` null and the page showed a skeleton forever. The user got a permanent spinner where
+  a retry button was supposed to be.
+- **The preview rendered twice**, once per breakpoint, with CSS hiding whichever did not apply.
+  Both copies were in the accessibility tree, so a screen reader announced the entire resume
+  twice. There is now one preview; the grid already collapsed that column below `lg`.
+
+**A third bug, from the template tests:** the Technical and Academic templates promote Skills and
+Education to the top of the page, and did so unconditionally — resurrecting a section the user
+had explicitly hidden. A template may reorder what someone chose to show; it may not overrule
+what they chose to hide.
+
+**One template is deliberately not ATS-safe.** Two column ships flagged, with the reason stated
+where the choice is made. A flag nothing ever trips is decoration, and its warning path is dead
+code nobody has looked at — users will find a two-column template somewhere, and it is better
+that it is one which tells them the cost.
+
+**Deviation from docs/05, recorded rather than silent:** the template catalogue lives in
+`@cc/shared`, not in a `Template` table. What the row would describe is a React component that
+ships in the client bundle, so a database row could name a template the deployed build cannot
+render — and that failure would land on a user rather than at deploy time. The API now validates
+`templateId` against exactly what the web app can draw. Revisit if templates ever become
+user-authored, at which point they stop being code and a table is right.
 
 ### `1.3` Editor `DONE`
 

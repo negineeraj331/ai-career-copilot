@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { LIMITS, RESUME_SCHEMA_VERSION } from '../constants/index.js';
+import {
+  DEFAULT_TEMPLATE_ID,
+  LIMITS,
+  RESUME_SCHEMA_VERSION,
+  TEMPLATE_IDS,
+} from '../constants/index.js';
 import { emailSchema, isoDateTimeSchema, monthSchema, uuidSchema } from './common.schema.js';
 
 /**
@@ -161,9 +166,21 @@ export const RESUME_STATUSES = ['DRAFT', 'ACTIVE', 'ARCHIVED', 'AWAITING_CONFIRM
 export const resumeStatusSchema = z.enum(RESUME_STATUSES);
 export type ResumeStatus = z.infer<typeof resumeStatusSchema>;
 
+/**
+ * Validated against the catalogue, not merely against being a short string.
+ *
+ * A free-text templateId lets a typo persist to the database and surface later
+ * as a resume that renders as nothing. The set of templates the client can draw
+ * is known at build time, so the contract may as well say so.
+ */
+export const templateIdSchema = z
+  .string()
+  .trim()
+  .refine((id) => TEMPLATE_IDS.includes(id), { message: 'Unknown template.' });
+
 export const createResumeSchema = z.object({
   title: z.string().trim().min(1).max(LIMITS.RESUME_TITLE_MAX),
-  templateId: z.string().trim().min(1).max(60).default('minimal-ats'),
+  templateId: templateIdSchema.default(DEFAULT_TEMPLATE_ID),
   targetRole: z.string().trim().max(120).optional(),
   content: resumeDocumentSchema.optional(),
 });
@@ -172,7 +189,7 @@ export type CreateResumeInput = z.infer<typeof createResumeSchema>;
 export const updateResumeSchema = z
   .object({
     title: z.string().trim().min(1).max(LIMITS.RESUME_TITLE_MAX).optional(),
-    templateId: z.string().trim().min(1).max(60).optional(),
+    templateId: templateIdSchema.optional(),
     targetRole: z.string().trim().max(120).nullable().optional(),
     content: resumeDocumentSchema.optional(),
     /** Optimistic concurrency. A mismatch returns 409 with the server's current

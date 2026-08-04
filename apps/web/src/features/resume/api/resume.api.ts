@@ -30,6 +30,7 @@ export const resumeApi = {
     id: string,
     body: {
       title?: string;
+      templateId?: string;
       targetRole?: string | null;
       content?: ResumeDocument;
       expectedVersion?: number;
