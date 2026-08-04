@@ -88,6 +88,10 @@ jobs:
       JWT_SECRET: ci-only-jwt-secret-value-at-least-32-chars-long
       ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       AI_PROVIDER: mock
+      STORAGE_ENDPOINT: http://localhost:9000
+      STORAGE_ACCESS_KEY_ID: cc_minio
+      STORAGE_SECRET_ACCESS_KEY: cc_minio_ci_password
+      STORAGE_FORCE_PATH_STYLE: 'true'
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -98,6 +102,26 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter "./packages/*" build
+
+      # MinIO runs as a step rather than a service container because a service
+      # cannot override the image's command, and the official MinIO image needs
+      # `server /data` to start at all. Export tests write real objects and read
+      # back real pre-signed URLs — mocking the S3 client here would assert that
+      # we call the SDK the way we call it, which is not the question.
+      - name: Start object storage
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=cc_minio \
+            -e MINIO_ROOT_PASSWORD=cc_minio_ci_password \
+            minio/minio:latest server /data
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9000/minio/health/live >/dev/null; then break; fi
+            sleep 1
+          done
+          docker run --rm --network host --entrypoint sh minio/mc:latest -c "
+            mc alias set ci http://localhost:9000 cc_minio cc_minio_ci_password &&
+            mc mb --ignore-existing ci/cc-exports &&
+            mc mb --ignore-existing ci/cc-uploads"
 
       - name: Apply migrations
         # `migrate deploy`, never `migrate dev`: deploy is non-interactive and
