@@ -246,6 +246,81 @@ describe('markdown', () => {
   });
 });
 
+describe('optional fields', () => {
+  // Almost every uncovered branch in this package is an `x ? … : ''` guard on an
+  // optional schema field. A document with all of them absent, and one with all
+  // of them present, walks both sides of each guard — which is worth more than
+  // the coverage number: these are the fields most likely to be missing in a
+  // half-finished resume, which is exactly when someone hits export.
+  const sparse = (): ResumeDocument =>
+    doc({
+      contact: { fullName: 'A', email: 'a@example.com', links: [] },
+      summary: undefined,
+      experience: [
+        {
+          id: 'e1',
+          company: '',
+          role: '',
+          dates: { start: '2022-01', end: '2023-01' },
+          bullets: [],
+          technologies: [],
+        },
+      ],
+      education: [
+        {
+          id: 'ed1',
+          institution: '',
+          degree: '',
+          dates: { start: '2016-08', end: null },
+          highlights: [],
+        },
+      ],
+      projects: [{ id: 'p1', name: '', bullets: [], technologies: [] }],
+      skills: [{ id: 's1', category: '', skills: [] }],
+      certifications: [{ id: 'c1', name: 'Standalone' }],
+      achievements: [{ id: 'a1', title: 'Standalone' }],
+    } as Partial<ResumeDocument>);
+
+  it.each([
+    ['markdown', (d: ResumeDocument) => toMarkdown(d)],
+    ['latex', (d: ResumeDocument) => toLatex(d)],
+    ['html', (d: ResumeDocument) => toPrintHtml(d, 'minimal-ats')],
+    ['two-column html', (d: ResumeDocument) => toPrintHtml(d, 'two-column')],
+  ] as const)('%s renders a document with every optional field missing', (_n, render) => {
+    const out = render(sparse());
+    expect(out.length).toBeGreaterThan(0);
+    // Placeholders rather than blanks, so the file never reads as corrupt.
+    expect(out).toMatch(/Role|Degree|Project|Your name|A/);
+    // And no stray separator left dangling where a value should have been.
+    expect(out).not.toMatch(/—\s*(\n|$)/);
+  });
+
+  it('renders a JSON export of a sparse document', () => {
+    const parsed = JSON.parse(toJson(sparse(), { exportedAt: 'T', appVersion: '1' })) as {
+      resume: ResumeDocument;
+    };
+    expect(parsed.resume.experience).toHaveLength(1);
+  });
+
+  it('keeps a certification issuer only when there is one', () => {
+    expect(toMarkdown(sparse())).toContain('Standalone');
+    expect(toMarkdown(doc())).toContain('CKA — CNCF');
+  });
+
+  it('renders every template style without throwing', () => {
+    for (const id of [
+      'minimal-ats',
+      'classic-serif',
+      'compact',
+      'technical',
+      'academic',
+      'two-column',
+    ]) {
+      expect(toPrintHtml(doc(), id)).toContain('</html>');
+    }
+  });
+});
+
 describe('empty document', () => {
   it('still produces a valid file in every format', () => {
     const empty = doc({

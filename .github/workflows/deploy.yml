@@ -45,6 +45,9 @@ jobs:
         with:
           context: .
           file: apps/api/Dockerfile
+          # See the note in ci.yml: the worker stage is last, so an omitted
+          # target ships a browser to production.
+          target: runtime
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ steps.meta.outputs.tag }}
           cache-from: type=gha

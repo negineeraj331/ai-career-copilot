@@ -163,6 +163,11 @@ jobs:
         with:
           context: .
           file: apps/api/Dockerfile
+          # Explicit, and not optional. The Dockerfile has a `worker` stage
+          # after this one, and `docker build` with no target builds the LAST
+          # stage — so omitting this silently tagged the 1.3 GB worker image,
+          # Chromium and all, as the API. The size gate caught it.
+          target: runtime
           push: false
           load: true
           tags: cc-api:${{ github.sha }}
