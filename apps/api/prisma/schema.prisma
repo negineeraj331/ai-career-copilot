@@ -450,3 +450,46 @@ model ExportJob {
   @@index([resumeId])
   @@index([status])
 }
+
+// ─── AI usage ─────────────────────────────────────────────────────────────────
+
+// Every AI call writes a row, successful or not (docs/05 §3.5). This table is
+// what makes the "AI cost per active user" budget measurable rather than
+// aspirational — the numbers are real token counts from the provider's `usage`,
+// not estimates from a spreadsheet.
+model AiUsageLog {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  // No foreign key, for the same reason as AuditLog: cost history must outlive
+  // the account it belonged to, or deleting a user silently rewrites last
+  // month's spend.
+  userId String @db.Uuid
+
+  feature         String
+  promptTemplate  String
+  // Part of the cache key too. A prompt edit changes what a row means, and a
+  // row that does not say which version produced it cannot be compared.
+  templateVersion Int
+
+  provider String
+  model    String
+
+  inputTokens      Int @default(0)
+  outputTokens     Int @default(0)
+  cacheReadTokens  Int @default(0)
+  cacheWriteTokens Int @default(0)
+
+  // Integer micros, never a float. Money in floating point accumulates error,
+  // and a budget measured with a drifting number is not measured.
+  costMicros Int @default(0)
+
+  latencyMs Int     @default(0)
+  cacheHit  Boolean @default(false)
+  success   Boolean @default(true)
+  errorCode String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([feature, createdAt(sort: Desc)])
+}

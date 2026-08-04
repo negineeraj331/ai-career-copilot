@@ -1,7 +1,7 @@
 # Build Tracker — Career Copilot
 
 **Last updated:** 2026-08-04 · Owner: Neeraj Negi
-**Current phase:** Phase 1 — Core loop · slices 1.1–1.5 done. Next: slice 1.6 (AI layer)
+**Current phase:** Phase 1 — Core loop · slices 1.1–1.6 done. Next: slice 1.7 (JD analysis)
 
 This is the live status of the build. The [roadmap](./17-feature-roadmap.md) says what we
 intend to build and in what order; this file says what actually exists right now. Update it in
@@ -18,12 +18,12 @@ people trust it.
 | ------------------------- | ----------- | ------ |
 | Documentation             | 19 / 19     | `DONE` |
 | Phase 0 — Foundation      | 8 / 8       | `DONE` |
-| Phase 1 — Core loop       | 5 / 9       | `WIP`  |
+| Phase 1 — Core loop       | 6 / 9       | `WIP`  |
 | Phase 2 — Retention       | 0 / 7       | `TODO` |
 | Phase 3 — Differentiation | 0 / 7       | `TODO` |
 | Phase 4 — Scale           | 0 / 8       | `TODO` |
 
-**Deployed:** nothing yet. **Tests:** 416 passing. **Coverage:** 91.7% API lines, 96.7% `@cc/ats`. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
+**Deployed:** nothing yet. **Tests:** 491 passing. **Coverage:** 91.7% API lines, 96.7% `@cc/ats`. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
 
 ---
 
@@ -383,8 +383,60 @@ Still open: a hosting target — open question 5, which slice 0.8 was meant to a
 ## Phase 1 — Core loop `WIP`
 
 `1.1` Resume model `DONE` · `1.2` ATS engine `DONE` · `1.3` Editor `DONE` ·
-`1.4` Templates `DONE` · `1.5` Export `DONE` · `1.6` AI layer · `1.7` JD analysis ·
+`1.4` Templates `DONE` · `1.5` Export `DONE` · `1.6` AI layer `DONE` · `1.7` JD analysis ·
 `1.8` AI writing · `1.9` Versions
+
+### `1.6` AI layer `DONE`
+
+- [x] `@cc/ai` — provider interface, Anthropic adapter, deterministic mock adapter
+- [x] Six versioned prompt templates, each routed to a model tier
+- [x] Structured output via a forced tool, re-validated against Zod
+- [x] Monthly quota, consumed atomically in Redis **before** dispatch
+- [x] 24h result cache keyed on feature + template version + model + input hash
+- [x] `AiUsageLog` — real token counts, integer micros, successes and failures alike
+- [x] 68 new tests
+
+**Verified:** 491 tests pass · `@cc/ai` at 95.8% lines / 80.8% branches · lint, format,
+typecheck, build, bundle budget, audit all clean.
+
+**The order is the design: quota → cache → dispatch → validate → meter.** Quota first so a
+rejected request never costs anything. Cache before quota-spend so an unchanged input is free
+_and_ does not consume a unit the user could have spent on something new. Metering last and
+unconditional, because a failed call still cost money and a budget that counts only successes
+understates itself.
+
+**Quota is a Lua `INCR`, not read-then-write.** With a read-then-write, twenty concurrent
+requests all see the same count and all proceed — a limit of ten becomes a limit of however many
+arrive in the same millisecond. There is a test that fires twenty at once and asserts exactly ten
+are granted, each with a distinct slot.
+
+**The reservation is released only when nothing was actually paid for.** A provider outage gives
+the unit back; a refusal or a schema violation does not, because the provider ran the call and
+billed us. Refunding there would let malformed input consume real money without limit. Both
+directions are tested, and mutating the release condition fails them.
+
+**`strict: true` was checked, not assumed, and deliberately not used.** It constrains generation
+to the schema rather than merely requesting it — but in `@anthropic-ai/sdk` 0.71 that field
+exists only on the **beta** messages API, confirmed by reading the installed type definitions
+after the stable path failed to typecheck. Putting a beta endpoint on the path that spends money
+was not worth it when the GA path plus a forced `tool_choice` plus Zod validation reaches the same
+end state: a rare non-conforming response is caught and reported as non-retryable, costing one
+call rather than a loop. Revisit when `strict` reaches GA.
+
+**The mock provider builds schema-valid data, not `{}`.** It walks the JSON Schema and produces a
+value that actually satisfies it, so every caller downstream — validation, caching, metering,
+eventually the UI — exercises the same path it would in production. A mock returning something
+the schema rejects would leave all of that asserting the error branch forever. When it cannot
+satisfy a schema it throws loudly, naming the mismatch, rather than returning something plausible.
+
+**A coverage gate was set without measuring — again.** `@cc/ai` got 85/85/85/75 copied across, and
+the package measured 67.7% lines because the Anthropic adapter had no tests. Worse, the config
+carried a comment claiming the adapter _was_ unit-tested against fabricated SDK objects. It was a
+promise, not a fact. The fix was to write those tests rather than move the gate: the request shape
+that makes prompt caching work, the forced tool choice, response extraction, and the error mapping
+that decides whether we pay for a retry. Lines went to 95.8%. The SDK error classes are
+constructed in the test rather than described, so a rename in a future version fails there instead
+of quietly routing every error to `unknown`.
 
 ### `1.5` Export `DONE`
 
