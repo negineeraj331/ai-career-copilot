@@ -16,3 +16,4 @@ export { MockProvider, type MockProviderOptions } from './providers/mock.provide
 export { PROMPTS, promptFor, type PromptTemplate } from './prompts/index.js';
 export { MODEL_PRICING, costMicros, formatMicros, type ModelPricing } from './pricing.js';
 export { cacheKeyFor } from './cache-key.js';
+export { jsonSchemaFor } from './json-schema.js';

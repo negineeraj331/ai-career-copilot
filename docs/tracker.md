@@ -1,7 +1,7 @@
 # Build Tracker — Career Copilot
 
 **Last updated:** 2026-08-04 · Owner: Neeraj Negi
-**Current phase:** Phase 1 — Core loop · slices 1.1–1.6 done. Next: slice 1.7 (JD analysis)
+**Current phase:** Phase 1 — Core loop · slices 1.1–1.7 done. Next: slice 1.8 (AI writing)
 
 This is the live status of the build. The [roadmap](./17-feature-roadmap.md) says what we
 intend to build and in what order; this file says what actually exists right now. Update it in
@@ -18,12 +18,12 @@ people trust it.
 | ------------------------- | ----------- | ------ |
 | Documentation             | 19 / 19     | `DONE` |
 | Phase 0 — Foundation      | 8 / 8       | `DONE` |
-| Phase 1 — Core loop       | 6 / 9       | `WIP`  |
+| Phase 1 — Core loop       | 7 / 9       | `WIP`  |
 | Phase 2 — Retention       | 0 / 7       | `TODO` |
 | Phase 3 — Differentiation | 0 / 7       | `TODO` |
 | Phase 4 — Scale           | 0 / 8       | `TODO` |
 
-**Deployed:** nothing yet. **Tests:** 491 passing. **Coverage:** 91.7% API lines, 96.7% `@cc/ats`. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
+**Deployed:** nothing yet. **Tests:** 547 passing. **Coverage:** 91.7% API lines, 96.7% `@cc/ats`. **Pipeline:** CI, deploy, CodeQL, Dependabot; every command verified locally.
 
 ---
 
@@ -383,8 +383,63 @@ Still open: a hosting target — open question 5, which slice 0.8 was meant to a
 ## Phase 1 — Core loop `WIP`
 
 `1.1` Resume model `DONE` · `1.2` ATS engine `DONE` · `1.3` Editor `DONE` ·
-`1.4` Templates `DONE` · `1.5` Export `DONE` · `1.6` AI layer `DONE` · `1.7` JD analysis ·
-`1.8` AI writing · `1.9` Versions
+`1.4` Templates `DONE` · `1.5` Export `DONE` · `1.6` AI layer `DONE` ·
+`1.7` JD analysis `DONE` · `1.8` AI writing · `1.9` Versions
+
+### `1.7` JD analysis `DONE`
+
+- [x] `JobDescription`, `Analysis`, and `Embedding` models; pgvector enabled with a cosine index
+- [x] AI requirement extraction, reused across users by content hash
+- [x] `@cc/match` — deterministic weighted match, gaps, recommendations
+- [x] `POST /jobs`, `POST /analysis`, and the reads around them
+- [x] Analysis pinned to a resume **version** and cached on `hash(version + jd + rubric)`
+- [x] 64 new tests
+
+**Verified:** 547 tests pass · `@cc/match` at 98.3% lines · pgvector confirmed live in the
+database with an `ivfflat` cosine index · lint, format, typecheck, build, bundle, audit clean.
+
+**Lexical matching is the floor, embeddings are additive.** The engine produces a defensible
+answer with no embedding provider configured at all: exact and alias matching catches most cases,
+because a posting asking for "Kubernetes" against a resume that says "Kubernetes" needs no
+semantics. Building it the other way round would mean the product returns nothing useful until an
+embedding key exists, and would hide a broken embedding path behind results that still look
+plausible.
+
+**An unreadable posting now returns no score rather than a middling one.** Probing real numbers —
+the same habit that caught the ATS engine's vacuous passes — showed a resume scoring **45**
+against a job description that yielded no requirements at all. That reads as "mediocre fit" when
+the truth is "we could not parse this". A parse failure presented as a result is worse than no
+result, because the user acts on it. `matchScore` is now null in that case, with the breakdown
+still populated so they can see what _was_ computed.
+
+**Experience merges overlapping roles instead of summing them.** Someone who consulted for two
+clients in the same year has one year of experience, not two; summing would let a resume inflate
+itself by splitting one job into three entries.
+
+**Two hand-written schemas drifted twice in one hour, so one of them was deleted.** The JSON
+Schema sent to the model for `jd.extract` was written by hand, on the sound reasoning that
+structured outputs accept only a subset of JSON Schema and a generator emits constructs providers
+reject. The consequence was worse than the risk it avoided:
+
+1. It invented an enum value that does not exist (`PHD`) and dropped two that do (`DIPLOMA`,
+   `DOCTORATE`), so the model would have been told the wrong allowed values.
+2. It omitted the numeric bounds Zod enforces, so a returned `minYearsExperience` of 60 would
+   fail validation.
+
+Both would have surfaced as responses rejected **after being paid for**, intermittently,
+depending on what the model happened to pick. The mock provider caught both before a real call
+ever ran — precisely because it builds a value from the JSON Schema and validates it against Zod,
+so a disagreement between the two is a test failure rather than a production one. The fix is
+`jsonSchemaFor()`: generate from Zod, then normalise into the supported subset (collapse
+`anyOf`-with-null into a type union, strip draft metadata, forbid additional properties). One
+source of truth, and it is the one that also validates the answer.
+
+**A coverage gate was set from another package's numbers for the third slice running.**
+`@cc/match` inherited 90/90/90/80 and measured 89.47% functions. The gap was two genuinely
+untested things — evidence found inside a project bullet, and alias matching in the
+resume-writes-canonical direction — so both were tested rather than the bar lowered. The config
+now records the measured numbers and says plainly why copying them is what caused three red CI
+runs.
 
 ### `1.6` AI layer `DONE`
 

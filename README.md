@@ -7,7 +7,7 @@ application through to an outcome.
 [![CI](https://github.com/negineeraj331/ai-career-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/negineeraj331/ai-career-copilot/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/negineeraj331/ai-career-copilot/actions/workflows/codeql.yml/badge.svg)](https://github.com/negineeraj331/ai-career-copilot/actions/workflows/codeql.yml)
 
-> **Status: Phase 1 in progress — 6 of 9 slices.** The identity, security, and delivery
+> **Status: Phase 1 in progress — 7 of 9 slices.** The identity, security, and delivery
 > foundation is complete and running in a container. Versioned resumes and deterministic ATS
 > scoring now work end to end. The rest of what
 > [`docs/01-PRD.md`](docs/01-PRD.md) describes — JD matching, AI writing, the editor, exports,
@@ -33,7 +33,7 @@ application through to an outcome.
 | ATS scoring: 26 rules, weighted rubric, per-rule fixes     | Working         |
 | JD analysis, AI writing, editor, export, interview prep    | **Not started** |
 
-491 tests pass. API line coverage is 91.0%, the auth module 94.7% against a stated 95%, and
+547 tests pass. API line coverage is 91.0%, the auth module 94.7% against a stated 95%, and
 the ATS engine 96.7% against a required 95%. Numbers are measured, not aspirational — see
 [`docs/13-testing-strategy.md`](docs/13-testing-strategy.md).
 
@@ -126,6 +126,7 @@ packages/   shared Zod contracts — one schema, validated on both sides
             ats — the scoring rubric as pure functions, no I/O at all
             exporters — Markdown, JSON, LaTeX, print HTML, also pure
             ai — provider interface, Claude adapter, prompts, cost model
+            match — deterministic JD matching, gaps, recommendations
 docs/       19 documents; the design that came before the code
 ```
 
@@ -168,7 +169,7 @@ what broke, and what is still owed.
 
 ## Where this actually is
 
-Phase 1, slice 6 of 9. Everything above under "What exists today" is real and verified;
+Phase 1, slice 7 of 9. Everything above under "What exists today" is real and verified;
 everything in the product vision beyond it is design work only.
 
 Known and recorded, not hidden:

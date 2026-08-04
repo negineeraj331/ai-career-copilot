@@ -106,6 +106,17 @@ function buildFromSchema(schema: Record<string, unknown>, seed: string, depth = 
     return schema.enum[index];
   }
 
+  // JSON Schema allows a union of types, and the real schemas use it for
+  // nullable fields (`type: ['number', 'null']`). One member is chosen from the
+  // seed rather than always taking the first, so both branches of a nullable
+  // field get exercised across different inputs — a mock that always returned
+  // the non-null form would leave every "what if this is null" path untested.
+  if (Array.isArray(schema.type)) {
+    const types = schema.type as string[];
+    const pick = types[parseInt(seed.slice(0, 2), 16) % types.length] ?? types[0];
+    return buildFromSchema({ ...schema, type: pick }, `${seed}u`, depth);
+  }
+
   switch (schema.type) {
     case 'object': {
       const properties = (schema.properties ?? {}) as Record<string, Record<string, unknown>>;
