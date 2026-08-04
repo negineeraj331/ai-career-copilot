@@ -1,4 +1,5 @@
 import type {
+  AiProposal,
   AtsRuleResult,
   AtsScore,
   PageInfo,
@@ -46,6 +47,15 @@ export const resumeApi = {
 
   restore: (id: string, versionId: string) =>
     apiClient.post<{ resume: ResumeDetail }>(`/resumes/${id}/versions/${versionId}/restore`),
+
+  optimiseBullets: (bullets: { id: string; text: string }[], role?: string) =>
+    apiClient.post<{ proposals: AiProposal[]; quotaRemaining: number }>('/ai/bullet/optimize', {
+      bullets,
+      ...(role ? { context: { role } } : {}),
+    }),
+
+  aiUsage: (signal?: AbortSignal) =>
+    apiClient.get<{ used: number; limit: number; remaining: number }>('/ai/usage', signal),
 
   /**
    * Scores a document that has not been saved. The editor uses this rather than

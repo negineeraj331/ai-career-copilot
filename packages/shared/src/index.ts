@@ -12,3 +12,4 @@ export * from './schemas/auth.schema.js';
 export * from './schemas/resume.schema.js';
 export * from './schemas/job.schema.js';
 export * from './schemas/analysis.schema.js';
+export * from './schemas/placeholders.js';

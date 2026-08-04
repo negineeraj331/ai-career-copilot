@@ -1,5 +1,6 @@
 import {
   emptyResumeDocument,
+  findPlaceholders,
   resumeDocumentSchema,
   type CreateResumeInput,
   type ResumeDetail,
@@ -87,6 +88,45 @@ function atsScoreFor(document: ResumeDocument, targetRole?: string | undefined):
   return scoreResume(document, { targetRole }).score;
 }
 
+/**
+ * Refuses to store text still containing an unfilled placeholder.
+ *
+ * docs/11 §5 puts this enforcement in the client — Accept stays disabled until
+ * every placeholder is confirmed. That is the right UX and the wrong place for
+ * the guarantee: a rule that lives only in the client holds until someone
+ * writes a script, a second client, or a bug. The failure it prevents is an
+ * application reaching an employer reading "improved latency by [X]%", which is
+ * worse than any inconvenience from being strict here.
+ */
+function rejectUnfilledPlaceholders(doc: ResumeDocument): void {
+  const fields: { path: string; text: string }[] = [
+    ...(doc.summary ? [{ path: 'summary', text: doc.summary }] : []),
+    ...doc.experience.flatMap((role, i) =>
+      role.bullets.map((b, j) => ({
+        path: `experience.${String(i)}.bullets.${String(j)}`,
+        text: b.text,
+      })),
+    ),
+    ...doc.projects.flatMap((project, i) =>
+      project.bullets.map((b, j) => ({
+        path: `projects.${String(i)}.bullets.${String(j)}`,
+        text: b.text,
+      })),
+    ),
+  ];
+
+  const offenders = fields
+    .map((field) => ({ ...field, found: findPlaceholders(field.text) }))
+    .filter((field) => field.found.length > 0);
+
+  if (offenders.length === 0) return;
+
+  throw new UnprocessableError(
+    'Some text still has a placeholder in it. Replace the bracketed values with your real numbers before saving.',
+    offenders.map((o) => ({ field: o.path, message: `Unfilled: ${o.found.join(', ')}` })),
+  );
+}
+
 export interface ListResumesOptions {
   limit: number;
   cursor?: string | undefined;
@@ -155,6 +195,8 @@ export async function createResume(
       select: { name: true, email: true },
     });
     content = emptyResumeDocument(author.name ?? 'Your Name', author.email);
+  } else {
+    rejectUnfilledPlaceholders(content);
   }
 
   const row = await prisma().$transaction(async (tx) => {
@@ -227,6 +269,7 @@ export async function updateResume(
     let content = parseStoredContent(current.content);
 
     if (input.content) {
+      rejectUnfilledPlaceholders(input.content);
       const nextHash = hashContent(input.content);
 
       if (nextHash === current.contentHash) {
